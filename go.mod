@@ -4,7 +4,6 @@ go 1.17
 
 require (
 	github.com/ava-labs/avalanchego v1.7.5
-	github.com/djimenez/iconv-go v0.0.0-20160305225143-8960e66bd3da
 	github.com/zondax/ledger-go v0.12.2
 )
 

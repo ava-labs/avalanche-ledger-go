@@ -16,7 +16,7 @@ const (
 )
 
 func bip32bytes(bip32Path []uint32) ([]byte, error) {
-	message := make([]byte, 41)
+	message := make([]byte, 21)
 	if len(bip32Path) > 10 {
 		return nil, fmt.Errorf("maximum bip32 depth = 10")
 	}
@@ -49,7 +49,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	data = append(data, pathBytes[:21]...)
+	data = append(data, pathBytes...)
 	msg = append(msg, byte(len(data)))
 	msg = append(msg, data...)
 	resp, err := device.Exchange(msg)
