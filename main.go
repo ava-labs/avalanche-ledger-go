@@ -4,16 +4,18 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/djimenez/iconv-go"
+	"github.com/ava-labs/avalanchego/utils/formatting"
 	"github.com/zondax/ledger-go"
 )
 
 const (
 	CLA                   = 0x80
 	INS_PROMPT_PUBLIC_KEY = 0x02
+	HRP                   = "fuji"
+	HARDEN_COUNT          = 3
 )
 
-func GetBip32bytes(bip32Path []uint32, hardenCount int) ([]byte, error) {
+func bip32bytes(bip32Path []uint32) ([]byte, error) {
 	message := make([]byte, 41)
 	if len(bip32Path) > 10 {
 		return nil, fmt.Errorf("maximum bip32 depth = 10")
@@ -22,19 +24,15 @@ func GetBip32bytes(bip32Path []uint32, hardenCount int) ([]byte, error) {
 	for index, element := range bip32Path {
 		pos := 1 + index*4
 		value := element
-		if index < hardenCount {
+		if index < HARDEN_COUNT {
 			value = 0x80000000 | element
 		}
-		binary.LittleEndian.PutUint32(message[pos:], value)
+		binary.BigEndian.PutUint32(message[pos:], value)
 	}
 	return message, nil
 }
-
 func main() {
-	fmt.Println("vim-go")
 	admin := ledger_go.NewLedgerAdmin()
-	fmt.Println(admin.ListDevices())
-	fmt.Println(admin.CountDevices())
 	device, err := admin.Connect(0)
 	if err != nil {
 		panic(err)
@@ -42,23 +40,25 @@ func main() {
 	msg := []byte{
 		CLA,
 		INS_PROMPT_PUBLIC_KEY,
-		0x04,
+		0x4,
 		0x00,
 	}
-	data := []byte{}
-	output, err := iconv.ConvertString("fuji", "utf-8", "latin1")
+	data := []byte(HRP)
+	// "44'/9000'/0'/0/0
+	pathBytes, err := bip32bytes([]uint32{44, 9000, 0, 0, 0})
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println(output)
-	data = append(data, output...)
-	bip32Bytes, err := GetBip32bytes([]uint32{44, 9000, 0, 0, 0}, 3)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println(bip32Bytes)
-	data = append(data, bip32Bytes...)
+	data = append(data, pathBytes[:21]...)
 	msg = append(msg, byte(len(data)))
 	msg = append(msg, data...)
-	fmt.Println(device.Exchange(msg))
+	resp, err := device.Exchange(msg)
+	if err != nil {
+		panic(err)
+	}
+	addr, err := formatting.FormatBech32(HRP, resp)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("address", addr)
 }
