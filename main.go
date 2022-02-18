@@ -31,12 +31,16 @@ func bip32bytes(bip32Path []uint32) ([]byte, error) {
 	}
 	return message, nil
 }
+
 func main() {
+	// Connect to Ledger
 	admin := ledger_go.NewLedgerAdmin()
 	device, err := admin.Connect(0)
 	if err != nil {
 		panic(err)
 	}
+
+	// Construct public key request
 	msg := []byte{
 		CLA,
 		INS_PROMPT_PUBLIC_KEY,
@@ -44,7 +48,6 @@ func main() {
 		0x00,
 	}
 	data := []byte(HRP)
-	// "44'/9000'/0'/0/0
 	pathBytes, err := bip32bytes([]uint32{44, 9000, 0, 0, 0})
 	if err != nil {
 		panic(err)
@@ -52,10 +55,14 @@ func main() {
 	data = append(data, pathBytes...)
 	msg = append(msg, byte(len(data)))
 	msg = append(msg, data...)
+
+	// Make public key request
 	resp, err := device.Exchange(msg)
 	if err != nil {
 		panic(err)
 	}
+
+	// Format public key response
 	addr, err := formatting.FormatBech32(HRP, resp)
 	if err != nil {
 		panic(err)
