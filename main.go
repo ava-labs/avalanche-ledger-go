@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 
@@ -10,6 +11,7 @@ import (
 
 const (
 	CLA                   = 0x80
+	INS_VERSION           = 0x00
 	INS_PROMPT_PUBLIC_KEY = 0x02
 	HRP                   = "fuji"
 	HARDEN_COUNT          = 3
@@ -40,12 +42,31 @@ func main() {
 		panic(err)
 	}
 
+	// Get version
+	msgVersion := []byte{
+		CLA,
+		INS_VERSION,
+		0x0,
+		0x0,
+		0x0,
+	}
+
+	// Make version request
+	rawVersion, err := device.Exchange(msgVersion)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("version: %d.%d.%d\n", rawVersion[0], rawVersion[1], rawVersion[2])
+	rem := bytes.Split(rawVersion[3:], []byte{0x0})
+	fmt.Printf("commit: %x\n", rem[0])
+	fmt.Printf("name: %s\n", rem[1])
+
 	// Construct public key request
-	msg := []byte{
+	msgPK := []byte{
 		CLA,
 		INS_PROMPT_PUBLIC_KEY,
 		0x4,
-		0x00,
+		0x0,
 	}
 	data := []byte(HRP)
 	pathBytes, err := bip32bytes([]uint32{44, 9000, 0, 0, 0})
@@ -53,19 +74,19 @@ func main() {
 		panic(err)
 	}
 	data = append(data, pathBytes...)
-	msg = append(msg, byte(len(data)))
-	msg = append(msg, data...)
+	msgPK = append(msgPK, byte(len(data)))
+	msgPK = append(msgPK, data...)
 
 	// Make public key request
-	resp, err := device.Exchange(msg)
+	rawAddress, err := device.Exchange(msgPK)
 	if err != nil {
 		panic(err)
 	}
 
 	// Format public key response
-	addr, err := formatting.FormatBech32(HRP, resp)
+	addr, err := formatting.FormatBech32(HRP, rawAddress)
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println("address", addr)
+	fmt.Println("address:", addr)
 }
