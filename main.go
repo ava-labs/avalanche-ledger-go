@@ -14,11 +14,11 @@ import (
 )
 
 const (
-	CLA                   = 0x80
-	INS_VERSION           = 0x00
-	INS_PROMPT_PUBLIC_KEY = 0x02
-	INS_SIGN_HASH         = 0x04
-	HRP                   = "fuji"
+	CLA                = 0x80
+	INSVersion         = 0x00
+	INSPromptPublicKey = 0x02
+	INSSignHash        = 0x04
+	HRP                = "fuji"
 )
 
 func bip32bytes(bip32Path []uint32, hardenCount int) ([]byte, error) {
@@ -53,7 +53,7 @@ func collectSignaturesFromSuffixes(device ledger_go.LedgerDevice, prefix []uint3
 		}
 		msgSig := []byte{
 			CLA,
-			INS_SIGN_HASH,
+			INSSignHash,
 			byte(p1),
 			0x0,
 		}
@@ -79,7 +79,7 @@ func main() {
 	// Get version
 	msgVersion := []byte{
 		CLA,
-		INS_VERSION,
+		INSVersion,
 		0x0,
 		0x0,
 		0x0,
@@ -98,7 +98,7 @@ func main() {
 	// Construct public key request
 	msgPK := []byte{
 		CLA,
-		INS_PROMPT_PUBLIC_KEY,
+		INSPromptPublicKey,
 		0x4,
 		0x0,
 	}
@@ -139,7 +139,7 @@ func main() {
 	data = append(data, pathBytes...)
 	msgHash := []byte{
 		CLA,
-		INS_SIGN_HASH,
+		INSSignHash,
 		0x0,
 		0x0,
 	}
