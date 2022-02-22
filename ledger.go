@@ -1,7 +1,7 @@
 // Copyright (C) 2022, Ava Labs, Inc. All rights reserved.
 // See the file LICENSE for licensing terms.
 
-package main
+package ledger
 
 import (
 	"bytes"
@@ -18,7 +18,6 @@ const (
 	INSVersion         = 0x00
 	INSPromptPublicKey = 0x02
 	INSSignHash        = 0x04
-	HRP                = "fuji"
 )
 
 func bip32bytes(bip32Path []uint32, hardenCount int) ([]byte, error) {
@@ -66,6 +65,61 @@ func collectSignaturesFromSuffixes(device ledger_go.LedgerDevice, prefix []uint3
 		results[i] = sig[:len(sig)-2]
 	}
 	return results
+}
+
+type Ledger struct {
+	device ledger_go.LedgerDevice
+}
+
+func Connect() (*Ledger, error) {
+	admin := ledger_go.NewLedgerAdmin()
+	device, err := admin.Connect(0)
+	if err != nil {
+		return nil, err
+	}
+	return &Ledger{device}, nil
+}
+
+func (l *Ledger) Version() (version string, commit string, name string, err error) {
+	msgVersion := []byte{
+		CLA,
+		INSVersion,
+		0x0,
+		0x0,
+		0x0,
+	}
+	rawVersion, err := l.device.Exchange(msgVersion)
+	if err != nil {
+		return
+	}
+
+	version = fmt.Sprintf("%d.%d.%d", rawVersion[0], rawVersion[1], rawVersion[2])
+	rem := bytes.Split(rawVersion[3:], []byte{0x0})
+	commit = fmt.Sprintf("%x", rem[0])
+	name = string(rem[1])
+	return
+}
+
+func (l *Ledger) Address(hrp string, accountIndex uint32, changeIndex uint32) (string, error) {
+	msgPK := []byte{
+		CLA,
+		INSPromptPublicKey,
+		0x4,
+		0x0,
+	}
+	pathBytes, err := bip32bytes([]uint32{44, 9000, 0, changeIndex, accountIndex}, 3)
+	if err != nil {
+		return "", err
+	}
+	data := append([]byte(hrp), pathBytes...)
+	msgPK = append(msgPK, byte(len(data)))
+	msgPK = append(msgPK, data...)
+	rawAddress, err := l.device.Exchange(msgPK)
+	if err != nil {
+		return "", err
+	}
+
+	return formatting.FormatBech32(hrp, rawAddress)
 }
 
 func main() {
