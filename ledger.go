@@ -68,10 +68,13 @@ func (l *Ledger) collectSignaturesFromSuffixes(suffixes [][]uint32) ([][]byte, e
 	return results, nil
 }
 
+// Ledger is a wrapper around the low-level Ledger Device interface that
+// provides Avalanche-specific access.
 type Ledger struct {
 	device ledger_go.LedgerDevice
 }
 
+// Connect attempts to connect to a Ledger on the device over HID.
 func Connect() (*Ledger, error) {
 	admin := ledger_go.NewLedgerAdmin()
 	device, err := admin.Connect(0)
@@ -81,6 +84,8 @@ func Connect() (*Ledger, error) {
 	return &Ledger{device}, nil
 }
 
+// Version returns information about the Avalanche Ledger app. If a different
+// app is open, this will return an error.
 func (l *Ledger) Version() (version string, commit string, name string, err error) {
 	msgVersion := []byte{
 		CLA,
@@ -101,8 +106,13 @@ func (l *Ledger) Version() (version string, commit string, name string, err erro
 	return
 }
 
-// m/44'/9000'/0'/0/n where n is the address index
-// m/44'/9000'/0'/1/n where n is the address index (X-Chain "change" addresses)
+// Address returns an Avalanche-formatted address with the provided [hrp].
+//
+// On the P/X-Chain, accounts are derived on the path m/44'/9000'/0'/0/n
+// (where n is the address index).
+//
+// On the X-Chain, "change" addresses are derived on the path
+// m/44'/9000'/0'/1/n (where n is the address index).
 func (l *Ledger) Address(hrp string, accountIndex uint32, changeIndex uint32) (string, error) {
 	msgPK := []byte{
 		CLA,
@@ -125,6 +135,8 @@ func (l *Ledger) Address(hrp string, accountIndex uint32, changeIndex uint32) (s
 	return formatting.FormatBech32(hrp, rawAddress)
 }
 
+// SignHash attempts to sign the [hash] with the provided path [suffixes].
+// [suffixes] are appened to the [pathPrefix] (m/44'/9000'/0').
 func (l *Ledger) SignHash(hash []byte, suffixes [][]uint32) ([][]byte, error) {
 	msgHash := []byte{
 		CLA,
