@@ -1,6 +1,3 @@
-// Copyright (C) 2022, Ava Labs, Inc. All rights reserved.
-// See the file LICENSE for licensing terms.
-
 package ledger
 
 import (
@@ -40,7 +37,7 @@ func TestLedger(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i, sig := range sigs {
-		fmt.Printf("sigs (%v): %x\n", append(pathPrefix, suffixes[i]...), sig)
+	if len(sigs) != 2 {
+		t.Fatalf("expected 2 signatures but found %d", len(sigs))
 	}
 }

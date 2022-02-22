@@ -46,7 +46,6 @@ func (l *Ledger) collectSignaturesFromSuffixes(suffixes [][]uint32) ([][]byte, e
 		if i == len(suffixes)-1 {
 			p1 = 0x81
 		}
-		fmt.Println("signing:", append(pathPrefix, suffix...))
 		data, err := bip32bytes(suffix, 0)
 		if err != nil {
 			return nil, err
@@ -64,6 +63,7 @@ func (l *Ledger) collectSignaturesFromSuffixes(suffixes [][]uint32) ([][]byte, e
 			return nil, err
 		}
 		results[i] = sig[:len(sig)-2]
+		fmt.Printf("%v signed: %X\n", append(pathPrefix, suffix...), results[i])
 	}
 	return results, nil
 }
@@ -141,6 +141,7 @@ func (l *Ledger) SignHash(hash []byte, suffixes [][]uint32) ([][]byte, error) {
 	data = append(data, pathBytes...)
 	msgHash = append(msgHash, byte(len(data)))
 	msgHash = append(msgHash, data...)
+	fmt.Printf("signing hash: %X\n", hash)
 	resp, err := l.device.Exchange(msgHash)
 	if err != nil {
 		return nil, err
