@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 jobs:
-  build_test_release:
+  build_test:
     runs-on: ubuntu-latest
     steps:
       - name: Git checkout
