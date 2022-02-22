@@ -1,8 +1,13 @@
+// Copyright (C) 2022, Ava Labs, Inc. All rights reserved.
+// See the file LICENSE for licensing terms.
+
 package ledger
 
 import (
 	"fmt"
 	"testing"
+
+	"github.com/ava-labs/avalanchego/utils/hashing"
 )
 
 // NOTE: You must have a physical ledger device to run this test
@@ -29,39 +34,13 @@ func TestLedger(t *testing.T) {
 	fmt.Printf("address: %s\n", address)
 
 	// Sign Hash
-	prefix := []uint32{44, 9000, 0}
-	suffixes := [][]uint32{{0, 1}, {0, 3}}
-	data = []byte{byte(len(suffixes))}
 	rawHash := hashing.ComputeHash256([]byte{0x1, 0x2, 0x3, 0x4})
-	data = append(data, rawHash...)
-	pathBytes, err = bip32bytes(prefix, 3)
+	suffixes := [][]uint32{{0, 1}, {0, 3}}
+	sigs, err := device.SignHash(rawHash, suffixes)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
-	data = append(data, pathBytes...)
-	msgHash := []byte{
-		CLA,
-		INSSignHash,
-		0x0,
-		0x0,
-	}
-	msgHash = append(msgHash, byte(len(data)))
-	msgHash = append(msgHash, data...)
-	responseHash, err := device.Exchange(msgHash)
-	if err != nil {
-		panic(err)
-	}
-	if !bytes.Equal(responseHash, rawHash) {
-		panic("signed hash changed")
-	}
-	fmt.Printf("message hash: %x\n", rawHash)
-
-	// Get Signatures
-	sigs := collectSignaturesFromSuffixes(device, prefix, suffixes)
 	for i, sig := range sigs {
-		fmt.Printf("sigs (%v): %x\n", append(prefix, suffixes[i]...), sig)
+		fmt.Printf("sigs (%v): %x\n", append(pathPrefix, suffixes[i]...), sig)
 	}
-
-	// TODO: Sign Transaction
-	// PVM: https://github.com/ava-labs/avalanchego/blob/f0a3bbb7d745be99d4970fb3b8fba3c7da87b891/vms/platformvm/tx.go#L100-L129
 }

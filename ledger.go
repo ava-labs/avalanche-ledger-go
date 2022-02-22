@@ -9,7 +9,6 @@ import (
 	"fmt"
 
 	"github.com/ava-labs/avalanchego/utils/formatting"
-	"github.com/ava-labs/avalanchego/utils/hashing"
 	ledger_go "github.com/zondax/ledger-go"
 )
 
@@ -19,6 +18,8 @@ const (
 	INSPromptPublicKey = 0x02
 	INSSignHash        = 0x04
 )
+
+var pathPrefix = []uint32{44, 9000, 0}
 
 func bip32bytes(bip32Path []uint32, hardenCount int) ([]byte, error) {
 	message := make([]byte, 1+len(bip32Path)*4)
@@ -37,7 +38,7 @@ func bip32bytes(bip32Path []uint32, hardenCount int) ([]byte, error) {
 	return message, nil
 }
 
-func collectSignaturesFromSuffixes(device ledger_go.LedgerDevice, prefix []uint32, suffixes [][]uint32) [][]byte {
+func (l *Ledger) collectSignaturesFromSuffixes(suffixes [][]uint32) ([][]byte, error) {
 	results := make([][]byte, len(suffixes))
 	for i := 0; i < len(suffixes); i++ {
 		suffix := suffixes[i]
@@ -45,10 +46,10 @@ func collectSignaturesFromSuffixes(device ledger_go.LedgerDevice, prefix []uint3
 		if i == len(suffixes)-1 {
 			p1 = 0x81
 		}
-		fmt.Println("signing:", append(prefix, suffix...))
+		fmt.Println("signing:", append(pathPrefix, suffix...))
 		data, err := bip32bytes(suffix, 0)
 		if err != nil {
-			panic(err)
+			return nil, err
 		}
 		msgSig := []byte{
 			CLA,
@@ -58,13 +59,13 @@ func collectSignaturesFromSuffixes(device ledger_go.LedgerDevice, prefix []uint3
 		}
 		msgSig = append(msgSig, byte(len(data)))
 		msgSig = append(msgSig, data...)
-		sig, err := device.Exchange(msgSig)
+		sig, err := l.device.Exchange(msgSig)
 		if err != nil {
-			panic(err)
+			return nil, err
 		}
 		results[i] = sig[:len(sig)-2]
 	}
-	return results
+	return results, nil
 }
 
 type Ledger struct {
@@ -100,6 +101,8 @@ func (l *Ledger) Version() (version string, commit string, name string, err erro
 	return
 }
 
+// m/44'/9000'/0'/0/n where n is the address index
+// m/44'/9000'/0'/1/n where n is the address index (X-Chain "change" addresses)
 func (l *Ledger) Address(hrp string, accountIndex uint32, changeIndex uint32) (string, error) {
 	msgPK := []byte{
 		CLA,
@@ -107,7 +110,7 @@ func (l *Ledger) Address(hrp string, accountIndex uint32, changeIndex uint32) (s
 		0x4,
 		0x0,
 	}
-	pathBytes, err := bip32bytes([]uint32{44, 9000, 0, changeIndex, accountIndex}, 3)
+	pathBytes, err := bip32bytes(append(pathPrefix, changeIndex, accountIndex), 3)
 	if err != nil {
 		return "", err
 	}
@@ -122,98 +125,29 @@ func (l *Ledger) Address(hrp string, accountIndex uint32, changeIndex uint32) (s
 	return formatting.FormatBech32(hrp, rawAddress)
 }
 
-func main() {
-	// Connect to Ledger
-	admin := ledger_go.NewLedgerAdmin()
-	device, err := admin.Connect(0)
-	if err != nil {
-		panic(err)
-	}
-
-	// Get version
-	msgVersion := []byte{
-		CLA,
-		INSVersion,
-		0x0,
-		0x0,
-		0x0,
-	}
-
-	// Make version request
-	rawVersion, err := device.Exchange(msgVersion)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Printf("version: %d.%d.%d\n", rawVersion[0], rawVersion[1], rawVersion[2])
-	rem := bytes.Split(rawVersion[3:], []byte{0x0})
-	fmt.Printf("commit: %x\n", rem[0])
-	fmt.Printf("name: %s\n", rem[1])
-
-	// Construct public key request
-	msgPK := []byte{
-		CLA,
-		INSPromptPublicKey,
-		0x4,
-		0x0,
-	}
-	data := []byte(HRP)
-	pathBytes, err := bip32bytes([]uint32{44, 9000, 0, 0, 0}, 3)
-	if err != nil {
-		panic(err)
-	}
-	data = append(data, pathBytes...)
-	msgPK = append(msgPK, byte(len(data)))
-	msgPK = append(msgPK, data...)
-
-	// Make public key request
-	rawAddress, err := device.Exchange(msgPK)
-	if err != nil {
-		panic(err)
-	}
-
-	// Format public key response
-	addr, err := formatting.FormatBech32(HRP, rawAddress)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println("address:", addr)
-
-	// TODO: Get Extended Public Key to get all UTXOs
-
-	// Sign Hash
-	prefix := []uint32{44, 9000, 0}
-	suffixes := [][]uint32{{0, 1}, {0, 3}}
-	data = []byte{byte(len(suffixes))}
-	rawHash := hashing.ComputeHash256([]byte{0x1, 0x2, 0x3, 0x4})
-	data = append(data, rawHash...)
-	pathBytes, err = bip32bytes(prefix, 3)
-	if err != nil {
-		panic(err)
-	}
-	data = append(data, pathBytes...)
+func (l *Ledger) SignHash(hash []byte, suffixes [][]uint32) ([][]byte, error) {
 	msgHash := []byte{
 		CLA,
 		INSSignHash,
 		0x0,
 		0x0,
 	}
+	pathBytes, err := bip32bytes(pathPrefix, 3)
+	if err != nil {
+		return nil, err
+	}
+	data := []byte{byte(len(suffixes))}
+	data = append(data, hash...)
+	data = append(data, pathBytes...)
 	msgHash = append(msgHash, byte(len(data)))
 	msgHash = append(msgHash, data...)
-	responseHash, err := device.Exchange(msgHash)
+	resp, err := l.device.Exchange(msgHash)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	if !bytes.Equal(responseHash, rawHash) {
-		panic("signed hash changed")
-	}
-	fmt.Printf("message hash: %x\n", rawHash)
-
-	// Get Signatures
-	sigs := collectSignaturesFromSuffixes(device, prefix, suffixes)
-	for i, sig := range sigs {
-		fmt.Printf("sigs (%v): %x\n", append(prefix, suffixes[i]...), sig)
+	if !bytes.Equal(resp, hash) {
+		return nil, fmt.Errorf("returned hash %x does not match requested %x", resp, hash)
 	}
 
-	// TODO: Sign Transaction
-	// PVM: https://github.com/ava-labs/avalanchego/blob/f0a3bbb7d745be99d4970fb3b8fba3c7da87b891/vms/platformvm/tx.go#L100-L129
+	return l.collectSignaturesFromSuffixes(suffixes)
 }
