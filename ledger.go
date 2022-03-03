@@ -62,7 +62,7 @@ func (l *Ledger) collectSignaturesFromSuffixes(suffixes [][]uint32) ([][]byte, e
 		if err != nil {
 			return nil, err
 		}
-		results[i] = sig[:len(sig)-2]
+		results[i] = sig
 		fmt.Printf("%v signed: %X\n", append(pathPrefix, suffix...), results[i])
 	}
 	return results, nil
