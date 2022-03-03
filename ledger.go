@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
+	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/utils/formatting"
 	ledger_go "github.com/zondax/ledger-go"
 )
@@ -62,7 +63,7 @@ func (l *Ledger) collectSignaturesFromSuffixes(suffixes [][]uint32) ([][]byte, e
 		if err != nil {
 			return nil, err
 		}
-		results[i] = sig[:len(sig)-2]
+		results[i] = sig
 		fmt.Printf("%v signed: %X\n", append(pathPrefix, suffix...), results[i])
 	}
 	return results, nil
@@ -113,7 +114,7 @@ func (l *Ledger) Version() (version string, commit string, name string, err erro
 //
 // On the X-Chain, "change" addresses are derived on the path
 // m/44'/9000'/0'/1/n (where n is the address index).
-func (l *Ledger) Address(hrp string, accountIndex uint32, changeIndex uint32) (string, error) {
+func (l *Ledger) Address(hrp string, accountIndex uint32, changeIndex uint32) (string, ids.ShortID, error) {
 	msgPK := []byte{
 		CLA,
 		INSPromptPublicKey,
@@ -122,17 +123,25 @@ func (l *Ledger) Address(hrp string, accountIndex uint32, changeIndex uint32) (s
 	}
 	pathBytes, err := bip32bytes(append(pathPrefix, changeIndex, accountIndex), 3)
 	if err != nil {
-		return "", err
+		return "", ids.ShortID{}, err
 	}
 	data := append([]byte(hrp), pathBytes...)
 	msgPK = append(msgPK, byte(len(data)))
 	msgPK = append(msgPK, data...)
 	rawAddress, err := l.device.Exchange(msgPK)
 	if err != nil {
-		return "", err
+		return "", ids.ShortID{}, err
 	}
 
-	return formatting.FormatBech32(hrp, rawAddress)
+	addr, err := formatting.FormatBech32(hrp, rawAddress)
+	if err != nil {
+		return "", ids.ShortID{}, err
+	}
+	shortAddr, err := ids.ToShortID(rawAddress)
+	if err != nil {
+		return "", ids.ShortID{}, err
+	}
+	return addr, shortAddr, nil
 }
 
 // SignHash attempts to sign the [hash] with the provided path [suffixes].

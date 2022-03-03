@@ -27,7 +27,7 @@ func TestLedger(t *testing.T) {
 	fmt.Printf("version: %s commit: %s name: %s\n", version, commit, name)
 
 	// Get Fuji Address
-	address, err := device.Address("fuji", 0, 0)
+	address, _, err := device.Address("fuji", 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
