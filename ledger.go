@@ -85,6 +85,11 @@ func Connect() (*Ledger, error) {
 	return &Ledger{device}, nil
 }
 
+// Disconnect attempts to disconnect from a previously connected Ledger.
+func (l *Ledger) Disconnect() error {
+	return l.device.Close()
+}
+
 // Version returns information about the Avalanche Ledger app. If a different
 // app is open, this will return an error.
 func (l *Ledger) Version() (version string, commit string, name string, err error) {
