@@ -23,10 +23,7 @@ const (
 	PublicKeyCompressedLength = 33
 )
 
-var (
-	curve       = btcutil.Secp256k1()
-	curveParams = curve.Params()
-)
+var curve = btcutil.Secp256k1()
 
 func bip32bytes(bip32Path []uint32, hardenCount int) ([]byte, error) {
 	message := make([]byte, 1+len(bip32Path)*4)
@@ -57,8 +54,7 @@ func getIntermediary(key []byte, chainCode []byte, childIdx uint32) ([]byte, err
 
 	// Compute HMAC
 	hmac := hmac.New(sha512.New, chainCode)
-	_, err := hmac.Write(data)
-	if err != nil {
+	if _, err := hmac.Write(data); err != nil {
 		return nil, err
 	}
 	return hmac.Sum(nil), nil
@@ -77,7 +73,7 @@ func NewChild(key []byte, chainCode []byte, childIdx uint32) ([]byte, error) {
 
 	// Ensure public key is valid
 	if pointX.Sign() == 0 || pointY.Sign() == 0 {
-		return nil, errors.New("Invalid public key")
+		return nil, errors.New("invalid public key")
 	}
 
 	// Compress public key
