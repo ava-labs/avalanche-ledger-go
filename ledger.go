@@ -5,39 +5,23 @@ package ledger
 
 import (
 	"bytes"
-	"encoding/binary"
 	"fmt"
 
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/utils/formatting"
+	"github.com/ava-labs/avalanchego/utils/hashing"
 	ledger_go "github.com/zondax/ledger-go"
 )
 
 const (
-	CLA                = 0x80
-	INSVersion         = 0x00
-	INSPromptPublicKey = 0x02
-	INSSignHash        = 0x04
+	CLA                   = 0x80
+	INSVersion            = 0x00
+	INSPromptPublicKey    = 0x02
+	INSPromptExtPublicKey = 0x03
+	INSSignHash           = 0x04
 )
 
 var pathPrefix = []uint32{44, 9000, 0}
-
-func bip32bytes(bip32Path []uint32, hardenCount int) ([]byte, error) {
-	message := make([]byte, 1+len(bip32Path)*4)
-	if len(bip32Path) > 10 {
-		return nil, fmt.Errorf("maximum bip32 depth = 10")
-	}
-	message[0] = byte(len(bip32Path))
-	for index, element := range bip32Path {
-		pos := 1 + index*4
-		value := element
-		if index < hardenCount {
-			value = 0x80000000 | element
-		}
-		binary.BigEndian.PutUint32(message[pos:], value)
-	}
-	return message, nil
-}
 
 func (l *Ledger) collectSignaturesFromSuffixes(suffixes [][]uint32) ([][]byte, error) {
 	results := make([][]byte, len(suffixes))
@@ -112,41 +96,109 @@ func (l *Ledger) Version() (version string, commit string, name string, err erro
 	return
 }
 
+// Address is a succinct representation of an Avalanche Address
+type Address struct {
+	Addr      string
+	ShortAddr ids.ShortID
+	Index     uint32
+}
+
 // Address returns an Avalanche-formatted address with the provided [hrp].
 //
 // On the P/X-Chain, accounts are derived on the path m/44'/9000'/0'/0/n
 // (where n is the address index).
-//
-// On the X-Chain, "change" addresses are derived on the path
-// m/44'/9000'/0'/1/n (where n is the address index).
-func (l *Ledger) Address(hrp string, accountIndex uint32, changeIndex uint32) (string, ids.ShortID, error) {
+func (l *Ledger) Address(hrp string, addressIndex uint32) (*Address, error) {
 	msgPK := []byte{
 		CLA,
 		INSPromptPublicKey,
 		0x4,
 		0x0,
 	}
-	pathBytes, err := bip32bytes(append(pathPrefix, changeIndex, accountIndex), 3)
+	pathBytes, err := bip32bytes(append(pathPrefix, 0, addressIndex), 3)
 	if err != nil {
-		return "", ids.ShortID{}, err
+		return nil, err
 	}
 	data := append([]byte(hrp), pathBytes...)
 	msgPK = append(msgPK, byte(len(data)))
 	msgPK = append(msgPK, data...)
 	rawAddress, err := l.device.Exchange(msgPK)
 	if err != nil {
-		return "", ids.ShortID{}, err
+		return nil, err
 	}
 
 	addr, err := formatting.FormatBech32(hrp, rawAddress)
 	if err != nil {
-		return "", ids.ShortID{}, err
+		return nil, err
 	}
 	shortAddr, err := ids.ToShortID(rawAddress)
 	if err != nil {
-		return "", ids.ShortID{}, err
+		return nil, err
 	}
-	return addr, shortAddr, nil
+	return &Address{
+		Addr:      addr,
+		ShortAddr: shortAddr,
+		Index:     addressIndex,
+	}, nil
+}
+
+func (l *Ledger) getExtendedPublicKey() ([]byte, []byte, error) {
+	msgEPK := []byte{
+		CLA,
+		INSPromptExtPublicKey,
+		0x0,
+		0x0,
+	}
+	// TODO: Only provide [pathPrefix] here and derive all path suffixes in code
+	pathBytes, err := bip32bytes(append(pathPrefix, 0), 3)
+	if err != nil {
+		return nil, nil, err
+	}
+	msgEPK = append(msgEPK, byte(len(pathBytes)))
+	msgEPK = append(msgEPK, pathBytes...)
+	response, err := l.device.Exchange(msgEPK)
+	if err != nil {
+		return nil, nil, err
+	}
+	pkLen := response[0]
+	chainCodeOffset := 2 + pkLen
+	chainCodeLength := response[1+pkLen]
+	fmt.Println("total len", len(response))
+	return response[1 : 1+pkLen], response[chainCodeOffset : chainCodeOffset+chainCodeLength], nil
+}
+
+// Addresses returns [addresses] Avalanche-formatted addresses with the
+// provided [hrp].
+//
+// On the P/X-Chain, accounts are derived on the path m/44'/9000'/0'/0/n
+// (where n is the address index).
+func (l *Ledger) Addresses(hrp string, addresses int) ([]*Address, error) {
+	pk, chainCode, err := l.getExtendedPublicKey()
+	if err != nil {
+		return nil, err
+	}
+
+	addrs := make([]*Address, addresses)
+	for i := 0; i < addresses; i++ {
+		index := uint32(i)
+		k, err := NewChild(pk, chainCode, uint32(i))
+		if err != nil {
+			return nil, err
+		}
+		shortAddr, err := ids.ToShortID(hashing.PubkeyBytesToAddress(k))
+		if err != nil {
+			return nil, err
+		}
+		addr, err := formatting.FormatBech32(hrp, shortAddr[:])
+		if err != nil {
+			return nil, err
+		}
+		addrs[i] = &Address{
+			Addr:      addr,
+			ShortAddr: shortAddr,
+			Index:     index,
+		}
+	}
+	return addrs, nil
 }
 
 // SignHash attempts to sign the [hash] with the provided path [suffixes].
