@@ -5,7 +5,6 @@ package ledger
 
 import (
 	"bytes"
-	"encoding/binary"
 	"fmt"
 
 	"github.com/ava-labs/avalanchego/ids"
@@ -23,23 +22,6 @@ const (
 )
 
 var pathPrefix = []uint32{44, 9000, 0}
-
-func bip32bytes(bip32Path []uint32, hardenCount int) ([]byte, error) {
-	message := make([]byte, 1+len(bip32Path)*4)
-	if len(bip32Path) > 10 {
-		return nil, fmt.Errorf("maximum bip32 depth = 10")
-	}
-	message[0] = byte(len(bip32Path))
-	for index, element := range bip32Path {
-		pos := 1 + index*4
-		value := element
-		if index < hardenCount {
-			value = 0x80000000 | element
-		}
-		binary.BigEndian.PutUint32(message[pos:], value)
-	}
-	return message, nil
-}
 
 func (l *Ledger) collectSignaturesFromSuffixes(suffixes [][]uint32) ([][]byte, error) {
 	results := make([][]byte, len(suffixes))
@@ -197,7 +179,7 @@ func (l *Ledger) Addresses(hrp string, addresses int) ([]*Address, error) {
 	addrs := make([]*Address, addresses)
 	for i := 0; i < addresses; i++ {
 		index := uint32(i)
-		k, err := NewChildKey(pk, chainCode, uint32(i))
+		k, err := NewChild(pk, chainCode, uint32(i))
 		if err != nil {
 			return nil, err
 		}
