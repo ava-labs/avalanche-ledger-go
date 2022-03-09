@@ -148,6 +148,7 @@ func (l *Ledger) getExtendedPublicKey() ([]byte, []byte, error) {
 		0x0,
 		0x0,
 	}
+	// TODO: Only provide [pathPrefix] here and derive all path suffixes in code
 	pathBytes, err := bip32bytes(append(pathPrefix, 0), 3)
 	if err != nil {
 		return nil, nil, err

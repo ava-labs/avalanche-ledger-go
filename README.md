@@ -31,3 +31,5 @@ if err != nil {
   panic(err)
 }
 ```
+
+**NOTE: THIS PROJECT IS ACTIVELY DEVELOPED AND MAY INCUR BREAKING CHANGES**
