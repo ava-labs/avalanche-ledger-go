@@ -43,4 +43,9 @@ func TestLedger(t *testing.T) {
 	if len(sigs) != 2 {
 		t.Fatalf("expected 2 signatures but found %d", len(sigs))
 	}
+
+	// Disconnect
+	if err := device.Disconnect(); err != nil {
+		t.Fatal(err)
+	}
 }
