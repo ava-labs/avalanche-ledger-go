@@ -14,10 +14,11 @@ import (
 )
 
 const (
-	CLA                = 0x80
-	INSVersion         = 0x00
-	INSPromptPublicKey = 0x02
-	INSSignHash        = 0x04
+	CLA                   = 0x80
+	INSVersion            = 0x00
+	INSPromptPublicKey    = 0x02
+	INSPromptExtPublicKey = 0x03
+	INSSignHash           = 0x04
 )
 
 var pathPrefix = []uint32{44, 9000, 0}
@@ -147,6 +148,51 @@ func (l *Ledger) Address(hrp string, accountIndex uint32, changeIndex uint32) (s
 		return "", ids.ShortID{}, err
 	}
 	return addr, shortAddr, nil
+}
+
+func (l *Ledger) getExtendedPublicKey() ([]byte, []byte, error) {
+	msgEPK := []byte{
+		CLA,
+		INSPromptExtPublicKey,
+		0x0,
+		0x0,
+	}
+	pathBytes, err := bip32bytes(pathPrefix, 3)
+	if err != nil {
+		return nil, nil, err
+	}
+	msgEPK = append(msgEPK, byte(len(pathBytes)))
+	msgEPK = append(msgEPK, pathBytes...)
+	response, err := l.device.Exchange(msgEPK)
+	if err != nil {
+		return nil, nil, err
+	}
+	pkLen := response[0]
+	chainCodeOffset := 2 + pkLen
+	chainCodeLength := response[1+pkLen]
+	return response[1 : 1+pkLen], response[chainCodeLength : chainCodeOffset+chainCodeLength], nil
+}
+
+type Address struct {
+	Addr       string
+	ShortAddr  ids.ShortID
+	PathSuffix []uint32
+}
+
+func (l *Ledger) Addresses(hrp string, accounts int) ([]*Address, error) {
+	pk, chainCode, err := l.getExtendedPublicKey()
+	if err != nil {
+		return nil, err
+	}
+	addrs := make([]*Address, accounts)
+
+	for i := 0; i < accounts; i++ {
+		addrs[i] = &Address{
+			PathSuffix: []uint32{0, uint32(i)},
+		}
+	}
+
+	return addrs, nil
 }
 
 // SignHash attempts to sign the [hash] with the provided path [suffixes].
