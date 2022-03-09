@@ -5,6 +5,7 @@ package ledger
 
 import (
 	"bytes"
+	"crypto/elliptic"
 	"encoding/binary"
 	"fmt"
 
@@ -121,14 +122,14 @@ func (l *Ledger) Version() (version string, commit string, name string, err erro
 //
 // On the X-Chain, "change" addresses are derived on the path
 // m/44'/9000'/0'/1/n (where n is the address index).
-func (l *Ledger) Address(hrp string, accountIndex uint32, changeIndex uint32) (*Address, error) {
+func (l *Ledger) Address(hrp string, addressIndex uint32, changeIndex uint32) (*Address, error) {
 	msgPK := []byte{
 		CLA,
 		INSPromptPublicKey,
 		0x4,
 		0x0,
 	}
-	pathBytes, err := bip32bytes(append(pathPrefix, changeIndex, accountIndex), 3)
+	pathBytes, err := bip32bytes(append(pathPrefix, changeIndex, addressIndex), 3)
 	if err != nil {
 		return nil, err
 	}
@@ -151,7 +152,7 @@ func (l *Ledger) Address(hrp string, accountIndex uint32, changeIndex uint32) (*
 	return &Address{
 		Addr:       addr,
 		ShortAddr:  shortAddr,
-		PathSuffix: []uint32{0, accountIndex},
+		PathSuffix: []uint32{changeIndex, addressIndex},
 	}, nil
 }
 
@@ -162,7 +163,7 @@ func (l *Ledger) getExtendedPublicKey() ([]byte, []byte, error) {
 		0x0,
 		0x0,
 	}
-	pathBytes, err := bip32bytes(append(pathPrefix, 0), 3)
+	pathBytes, err := bip32bytes(pathPrefix, 3)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -197,12 +198,18 @@ func (l *Ledger) Addresses(hrp string, accounts int) ([]*Address, error) {
 
 	for i := 0; i < accounts; i++ {
 		suffix := []uint32{0, uint32(i)}
-		k, err := NewChildKey(pk, chainCode, uint32(i))
+		k1, err := NewChildKey(pk, chainCode, uint32(0))
 		if err != nil {
 			return nil, err
 		}
-		fmt.Printf("%v: %x\n", suffix, k)
-		shortAddr, err := ids.ToShortID(hashing.PubkeyBytesToAddress(k))
+		k2, err := NewChildKey(k1, chainCode, uint32(i))
+		if err != nil {
+			return nil, err
+		}
+		fX, fY := elliptic.Unmarshal(curve, k2)
+		fk := elliptic.MarshalCompressed(curve, fX, fY)
+		fmt.Printf("%v: %x\n", suffix, fk)
+		shortAddr, err := ids.ToShortID(hashing.PubkeyBytesToAddress(fk))
 		if err != nil {
 			return nil, err
 		}

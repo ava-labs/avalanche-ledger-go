@@ -51,9 +51,7 @@ func uint32Bytes(i uint32) []byte {
 	return bytes
 }
 
-func getIntermediary(key []byte, chainCode []byte, childIdx uint32) ([]byte, error) {
-	pkx, pky := elliptic.Unmarshal(curve, key)
-	ckey := elliptic.MarshalCompressed(curve, pkx, pky)
+func getIntermediary(ckey []byte, chainCode []byte, childIdx uint32) ([]byte, error) {
 	childIndexBytes := uint32Bytes(childIdx)
 	data := append(ckey, childIndexBytes...)
 	fmt.Printf("data buff: %x\n", data)
@@ -66,51 +64,19 @@ func getIntermediary(key []byte, chainCode []byte, childIdx uint32) ([]byte, err
 	return hmac.Sum(nil), nil
 }
 
-func expandPublicKey(key []byte) (*big.Int, *big.Int) {
-	Y := big.NewInt(0)
-	X := big.NewInt(0)
-	X.SetBytes(key[1:])
-
-	// y^2 = x^3 + ax^2 + b
-	// a = 0
-	// => y^2 = x^3 + b
-	ySquared := big.NewInt(0)
-	ySquared.Exp(X, big.NewInt(3), nil)
-	ySquared.Add(ySquared, curveParams.B)
-
-	Y.ModSqrt(ySquared, curveParams.P)
-
-	Ymod2 := big.NewInt(0)
-	Ymod2.Mod(Y, big.NewInt(2))
-
-	signY := uint64(key[0]) - 2
-	if signY != Ymod2.Uint64() {
-		Y.Sub(curveParams.P, Y)
-	}
-
-	return X, Y
-}
-
-func validateChildPublicKey(key []byte) error {
-	x, y := expandPublicKey(key)
-
-	if x.Sign() == 0 || y.Sign() == 0 {
-		return errors.New("Invalid public key")
-	}
-
-	return nil
-}
-
 // Inspired by: https://github.com/tyler-smith/go-bip32
 func NewChildKey(key []byte, chainCode []byte, childIdx uint32) ([]byte, error) {
-	intermediary, err := getIntermediary(key, chainCode, childIdx)
+	pubX, pubY := elliptic.Unmarshal(curve, key)
+	ckey := elliptic.MarshalCompressed(curve, pubX, pubY)
+	intermediary, err := getIntermediary(ckey, chainCode, childIdx)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("intermediary: %x child: %d\n", intermediary[:32], childIdx)
-	pubX, pubY := elliptic.Unmarshal(curve, key)
+	fmt.Printf("intermediary: %x child: %d starting ck: %x\n", intermediary[:32], childIdx, ckey)
 	tweakX, tweakY := curve.ScalarBaseMult(intermediary[:32])
 	pointX, pointY := curve.Add(pubX, pubY, tweakX, tweakY)
-	childKey := elliptic.MarshalCompressed(curve, pointX, pointY)
-	return childKey, validateChildPublicKey(childKey)
+	if pointX.Sign() == 0 || pointY.Sign() == 0 {
+		return nil, errors.New("Invalid public key")
+	}
+	return elliptic.Marshal(curve, pointX, pointY), nil
 }
