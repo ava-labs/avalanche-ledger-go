@@ -175,6 +175,7 @@ func (l *Ledger) getExtendedPublicKey() ([]byte, []byte, error) {
 	pkLen := response[0]
 	chainCodeOffset := 2 + pkLen
 	chainCodeLength := response[1+pkLen]
+	fmt.Println("total len", len(response))
 	return response[1 : 1+pkLen], response[chainCodeOffset : chainCodeOffset+chainCodeLength], nil
 }
 
@@ -189,15 +190,18 @@ func (l *Ledger) Addresses(hrp string, accounts int) ([]*Address, error) {
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println("pk len", len(pk), "chain code len", len(chainCode))
+	// PK: 044bcf63beb92c52d893154cffccc10582bd0aec2f83ca6e31c2b5e8e7aa4d43eaff4c8fbcc01ae8c74b362b74ffb372f41b0947a4f75c73bc9710ed8fc19cf172
+	// Chain Code: ae5f25b07427255d1885de6c5a0dc3bc248a59ae23b358123e65423e6ea57fd9
+	fmt.Printf("PK: %x CC: %x\n", pk, chainCode)
 	addrs := make([]*Address, accounts)
 
 	for i := 0; i < accounts; i++ {
-		childIdx := uint32(i)
-		k, err := NewChildKey(pk, chainCode, childIdx)
+		suffix := []uint32{0, uint32(i)}
+		k, err := NewChildKey(pk, chainCode, uint32(i))
 		if err != nil {
 			return nil, err
 		}
+		fmt.Printf("%v: %x\n", suffix, k)
 		shortAddr, err := ids.ToShortID(hashing.PubkeyBytesToAddress(k))
 		if err != nil {
 			return nil, err
@@ -209,7 +213,7 @@ func (l *Ledger) Addresses(hrp string, accounts int) ([]*Address, error) {
 		addrs[i] = &Address{
 			Addr:       addr,
 			ShortAddr:  shortAddr,
-			PathSuffix: []uint32{0, childIdx},
+			PathSuffix: suffix,
 		}
 	}
 	return addrs, nil

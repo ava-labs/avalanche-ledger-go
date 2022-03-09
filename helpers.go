@@ -7,6 +7,7 @@ import (
 	"crypto/sha512"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"math/big"
 
 	btcutil "github.com/FactomProject/btcutilecc"
@@ -51,8 +52,11 @@ func uint32Bytes(i uint32) []byte {
 }
 
 func getIntermediary(key []byte, chainCode []byte, childIdx uint32) ([]byte, error) {
+	pkx, pky := elliptic.Unmarshal(curve, key)
+	ckey := elliptic.MarshalCompressed(curve, pkx, pky)
 	childIndexBytes := uint32Bytes(childIdx)
-	data := append(key, childIndexBytes...)
+	data := append(ckey, childIndexBytes...)
+	fmt.Printf("data buff: %x\n", data)
 
 	hmac := hmac.New(sha512.New, chainCode)
 	_, err := hmac.Write(data)
@@ -103,6 +107,7 @@ func NewChildKey(key []byte, chainCode []byte, childIdx uint32) ([]byte, error) 
 	if err != nil {
 		return nil, err
 	}
+	fmt.Printf("intermediary: %x child: %d\n", intermediary[:32], childIdx)
 	pubX, pubY := elliptic.Unmarshal(curve, key)
 	tweakX, tweakY := curve.ScalarBaseMult(intermediary[:32])
 	pointX, pointY := curve.Add(pubX, pubY, tweakX, tweakY)
