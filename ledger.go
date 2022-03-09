@@ -114,21 +114,25 @@ func (l *Ledger) Version() (version string, commit string, name string, err erro
 	return
 }
 
+// Address is a succinct representation of an Avalanche Address
+type Address struct {
+	Addr      string
+	ShortAddr ids.ShortID
+	Index     uint32
+}
+
 // Address returns an Avalanche-formatted address with the provided [hrp].
 //
 // On the P/X-Chain, accounts are derived on the path m/44'/9000'/0'/0/n
 // (where n is the address index).
-//
-// On the X-Chain, "change" addresses are derived on the path
-// m/44'/9000'/0'/1/n (where n is the address index).
-func (l *Ledger) Address(hrp string, accountIndex uint32, changeIndex uint32) (*Address, error) {
+func (l *Ledger) Address(hrp string, addressIndex uint32) (*Address, error) {
 	msgPK := []byte{
 		CLA,
 		INSPromptPublicKey,
 		0x4,
 		0x0,
 	}
-	pathBytes, err := bip32bytes(append(pathPrefix, changeIndex, accountIndex), 3)
+	pathBytes, err := bip32bytes(append(pathPrefix, 0, addressIndex), 3)
 	if err != nil {
 		return nil, err
 	}
@@ -149,9 +153,9 @@ func (l *Ledger) Address(hrp string, accountIndex uint32, changeIndex uint32) (*
 		return nil, err
 	}
 	return &Address{
-		Addr:       addr,
-		ShortAddr:  shortAddr,
-		PathSuffix: []uint32{0, accountIndex},
+		Addr:      addr,
+		ShortAddr: shortAddr,
+		Index:     addressIndex,
 	}, nil
 }
 
@@ -179,29 +183,24 @@ func (l *Ledger) getExtendedPublicKey() ([]byte, []byte, error) {
 	return response[1 : 1+pkLen], response[chainCodeOffset : chainCodeOffset+chainCodeLength], nil
 }
 
-type Address struct {
-	Addr       string
-	ShortAddr  ids.ShortID
-	PathSuffix []uint32
-}
-
-func (l *Ledger) Addresses(hrp string, accounts int) ([]*Address, error) {
+// Addresses returns [addresses] Avalanche-formatted addresses with the
+// provided [hrp].
+//
+// On the P/X-Chain, accounts are derived on the path m/44'/9000'/0'/0/n
+// (where n is the address index).
+func (l *Ledger) Addresses(hrp string, addresses int) ([]*Address, error) {
 	pk, chainCode, err := l.getExtendedPublicKey()
 	if err != nil {
 		return nil, err
 	}
-	// PK: 044bcf63beb92c52d893154cffccc10582bd0aec2f83ca6e31c2b5e8e7aa4d43eaff4c8fbcc01ae8c74b362b74ffb372f41b0947a4f75c73bc9710ed8fc19cf172
-	// Chain Code: ae5f25b07427255d1885de6c5a0dc3bc248a59ae23b358123e65423e6ea57fd9
-	fmt.Printf("PK: %x CC: %x\n", pk, chainCode)
-	addrs := make([]*Address, accounts)
 
-	for i := 0; i < accounts; i++ {
-		suffix := []uint32{0, uint32(i)}
+	addrs := make([]*Address, addresses)
+	for i := 0; i < addresses; i++ {
+		index := uint32(i)
 		k, err := NewChildKey(pk, chainCode, uint32(i))
 		if err != nil {
 			return nil, err
 		}
-		fmt.Printf("%v: %x\n", suffix, k)
 		shortAddr, err := ids.ToShortID(hashing.PubkeyBytesToAddress(k))
 		if err != nil {
 			return nil, err
@@ -211,9 +210,9 @@ func (l *Ledger) Addresses(hrp string, accounts int) ([]*Address, error) {
 			return nil, err
 		}
 		addrs[i] = &Address{
-			Addr:       addr,
-			ShortAddr:  shortAddr,
-			PathSuffix: suffix,
+			Addr:      addr,
+			ShortAddr: shortAddr,
+			Index:     index,
 		}
 	}
 	return addrs, nil

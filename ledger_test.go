@@ -27,7 +27,7 @@ func TestLedger(t *testing.T) {
 	fmt.Printf("version: %s commit: %s name: %s\n", version, commit, name)
 
 	// Get Fuji Address
-	address, err := device.Address("fuji", 0, 0)
+	address, err := device.Address("fuji", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,6 +40,8 @@ func TestLedger(t *testing.T) {
 	}
 	for i, addr := range addresses {
 		fmt.Printf("address(%d): %+v\n", i, addr)
+
+		// Ensure first derived address matches directly requested address
 		if i == 0 && addr.Addr != address.Addr {
 			t.Fatalf("address mismatch at index 0 (expected=%s, found=%s)", address.Addr, addr.Addr)
 		}
