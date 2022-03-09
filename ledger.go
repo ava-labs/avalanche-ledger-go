@@ -10,6 +10,7 @@ import (
 
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/utils/formatting"
+	"github.com/ava-labs/avalanchego/utils/hashing"
 	ledger_go "github.com/zondax/ledger-go"
 )
 
@@ -120,7 +121,7 @@ func (l *Ledger) Version() (version string, commit string, name string, err erro
 //
 // On the X-Chain, "change" addresses are derived on the path
 // m/44'/9000'/0'/1/n (where n is the address index).
-func (l *Ledger) Address(hrp string, accountIndex uint32, changeIndex uint32) (string, ids.ShortID, error) {
+func (l *Ledger) Address(hrp string, accountIndex uint32, changeIndex uint32) (*Address, error) {
 	msgPK := []byte{
 		CLA,
 		INSPromptPublicKey,
@@ -129,25 +130,29 @@ func (l *Ledger) Address(hrp string, accountIndex uint32, changeIndex uint32) (s
 	}
 	pathBytes, err := bip32bytes(append(pathPrefix, changeIndex, accountIndex), 3)
 	if err != nil {
-		return "", ids.ShortID{}, err
+		return nil, err
 	}
 	data := append([]byte(hrp), pathBytes...)
 	msgPK = append(msgPK, byte(len(data)))
 	msgPK = append(msgPK, data...)
 	rawAddress, err := l.device.Exchange(msgPK)
 	if err != nil {
-		return "", ids.ShortID{}, err
+		return nil, err
 	}
 
 	addr, err := formatting.FormatBech32(hrp, rawAddress)
 	if err != nil {
-		return "", ids.ShortID{}, err
+		return nil, err
 	}
 	shortAddr, err := ids.ToShortID(rawAddress)
 	if err != nil {
-		return "", ids.ShortID{}, err
+		return nil, err
 	}
-	return addr, shortAddr, nil
+	return &Address{
+		Addr:       addr,
+		ShortAddr:  shortAddr,
+		PathSuffix: []uint32{0, accountIndex},
+	}, nil
 }
 
 func (l *Ledger) getExtendedPublicKey() ([]byte, []byte, error) {
@@ -157,7 +162,7 @@ func (l *Ledger) getExtendedPublicKey() ([]byte, []byte, error) {
 		0x0,
 		0x0,
 	}
-	pathBytes, err := bip32bytes(pathPrefix, 3)
+	pathBytes, err := bip32bytes(append(pathPrefix, 0), 3)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -170,7 +175,7 @@ func (l *Ledger) getExtendedPublicKey() ([]byte, []byte, error) {
 	pkLen := response[0]
 	chainCodeOffset := 2 + pkLen
 	chainCodeLength := response[1+pkLen]
-	return response[1 : 1+pkLen], response[chainCodeLength : chainCodeOffset+chainCodeLength], nil
+	return response[1 : 1+pkLen], response[chainCodeOffset : chainCodeOffset+chainCodeLength], nil
 }
 
 type Address struct {
@@ -184,14 +189,29 @@ func (l *Ledger) Addresses(hrp string, accounts int) ([]*Address, error) {
 	if err != nil {
 		return nil, err
 	}
+	fmt.Println("pk len", len(pk), "chain code len", len(chainCode))
 	addrs := make([]*Address, accounts)
 
 	for i := 0; i < accounts; i++ {
+		childIdx := uint32(i)
+		k, err := NewChildKey(pk, chainCode, childIdx)
+		if err != nil {
+			return nil, err
+		}
+		shortAddr, err := ids.ToShortID(hashing.PubkeyBytesToAddress(k))
+		if err != nil {
+			return nil, err
+		}
+		addr, err := formatting.FormatBech32(hrp, shortAddr[:])
+		if err != nil {
+			return nil, err
+		}
 		addrs[i] = &Address{
-			PathSuffix: []uint32{0, uint32(i)},
+			Addr:       addr,
+			ShortAddr:  shortAddr,
+			PathSuffix: []uint32{0, childIdx},
 		}
 	}
-
 	return addrs, nil
 }
 
