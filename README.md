@@ -1,6 +1,6 @@
 # avalanche-ledger-go
 
-_Helper Functions for Using the [Avalanche Ledger App](https://github.com/obsidiansystems/ledger-app-avalanche) with Golang_
+_Golang SDK for Using the [Avalanche Ledger App](https://github.com/obsidiansystems/ledger-app-avalanche)_
 
 ## Example
 ```golang
@@ -31,5 +31,10 @@ if err != nil {
   panic(err)
 }
 ```
+
+## TODO
+* Add X-Chain Support (change indices)
+* Add C-Chain Support
+* Support Transaction Parsing (only sign hashes right now)
 
 **NOTE: THIS PROJECT IS ACTIVELY DEVELOPED AND MAY INCUR BREAKING CHANGES**

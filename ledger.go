@@ -21,14 +21,16 @@ const (
 	INSSignHash           = 0x04
 )
 
-var pathPrefix = []uint32{44, 9000, 0}
+// NOTE: The current path prefix assumes we are using account 0 and don't have
+// any change addresses
+var pathPrefix = []uint32{44, 9000, 0, 0}
 
-func (l *Ledger) collectSignaturesFromSuffixes(suffixes [][]uint32) ([][]byte, error) {
-	results := make([][]byte, len(suffixes))
-	for i := 0; i < len(suffixes); i++ {
-		suffix := suffixes[i]
+func (l *Ledger) collectSignatures(addresses []uint32) ([][]byte, error) {
+	results := make([][]byte, len(addresses))
+	for i := 0; i < len(addresses); i++ {
+		suffix := []uint32{addresses[i]}
 		p1 := 0x01
-		if i == len(suffixes)-1 {
+		if i == len(addresses)-1 {
 			p1 = 0x81
 		}
 		data, err := bip32bytes(suffix, 0)
@@ -100,7 +102,6 @@ func (l *Ledger) Version() (version string, commit string, name string, err erro
 type Address struct {
 	Addr      string
 	ShortAddr ids.ShortID
-	Index     uint32
 }
 
 // Address returns an Avalanche-formatted address with the provided [hrp].
@@ -114,7 +115,7 @@ func (l *Ledger) Address(hrp string, addressIndex uint32) (*Address, error) {
 		0x4,
 		0x0,
 	}
-	pathBytes, err := bip32bytes(append(pathPrefix, 0, addressIndex), 3)
+	pathBytes, err := bip32bytes(append(pathPrefix, addressIndex), 3)
 	if err != nil {
 		return nil, err
 	}
@@ -137,7 +138,6 @@ func (l *Ledger) Address(hrp string, addressIndex uint32) (*Address, error) {
 	return &Address{
 		Addr:      addr,
 		ShortAddr: shortAddr,
-		Index:     addressIndex,
 	}, nil
 }
 
@@ -148,8 +148,7 @@ func (l *Ledger) getExtendedPublicKey() ([]byte, []byte, error) {
 		0x0,
 		0x0,
 	}
-	// TODO: Only provide [pathPrefix] here and derive all path suffixes in code
-	pathBytes, err := bip32bytes(append(pathPrefix, 0), 3)
+	pathBytes, err := bip32bytes(pathPrefix, 3)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -179,7 +178,6 @@ func (l *Ledger) Addresses(hrp string, addresses int) ([]*Address, error) {
 
 	addrs := make([]*Address, addresses)
 	for i := 0; i < addresses; i++ {
-		index := uint32(i)
 		k, err := NewChild(pk, chainCode, uint32(i))
 		if err != nil {
 			return nil, err
@@ -195,15 +193,14 @@ func (l *Ledger) Addresses(hrp string, addresses int) ([]*Address, error) {
 		addrs[i] = &Address{
 			Addr:      addr,
 			ShortAddr: shortAddr,
-			Index:     index,
 		}
 	}
 	return addrs, nil
 }
 
-// SignHash attempts to sign the [hash] with the provided path [suffixes].
-// [suffixes] are appened to the [pathPrefix] (m/44'/9000'/0').
-func (l *Ledger) SignHash(hash []byte, suffixes [][]uint32) ([][]byte, error) {
+// SignHash attempts to sign the [hash] with the provided path [addresses].
+// [addresses] are appened to the [pathPrefix] (m/44'/9000'/0'/0).
+func (l *Ledger) SignHash(hash []byte, addresses []uint32) ([][]byte, error) {
 	msgHash := []byte{
 		CLA,
 		INSSignHash,
@@ -214,7 +211,7 @@ func (l *Ledger) SignHash(hash []byte, suffixes [][]uint32) ([][]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	data := []byte{byte(len(suffixes))}
+	data := []byte{byte(len(addresses))}
 	data = append(data, hash...)
 	data = append(data, pathBytes...)
 	msgHash = append(msgHash, byte(len(data)))
@@ -228,5 +225,5 @@ func (l *Ledger) SignHash(hash []byte, suffixes [][]uint32) ([][]byte, error) {
 		return nil, fmt.Errorf("returned hash %x does not match requested %x", resp, hash)
 	}
 
-	return l.collectSignaturesFromSuffixes(suffixes)
+	return l.collectSignatures(addresses)
 }
