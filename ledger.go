@@ -161,7 +161,6 @@ func (l *Ledger) getExtendedPublicKey() ([]byte, []byte, error) {
 	pkLen := response[0]
 	chainCodeOffset := 2 + pkLen
 	chainCodeLength := response[1+pkLen]
-	fmt.Println("total len", len(response))
 	return response[1 : 1+pkLen], response[chainCodeOffset : chainCodeOffset+chainCodeLength], nil
 }
 
