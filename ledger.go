@@ -230,11 +230,11 @@ func (l *Ledger) SignHash(hash []byte, addresses []uint32) ([][]byte, error) {
 
 
 func (l *Ledger) SignTransaction(txn []byte, addresses []uint32, changePath []uint32) ([][]byte, error) {
-	msgTX := []byte {
+	msgTx := []byte {
 		CLA,
 		INSSignTransaction,
 		0x00,
-		0x00
+		0x00,
 	}
 	pathBytes, err := bip32bytes(pathPrefix, 3)
 	if err != nil {
