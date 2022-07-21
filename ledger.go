@@ -19,6 +19,7 @@ const (
 	INSPromptPublicKey    = 0x02
 	INSPromptExtPublicKey = 0x03
 	INSSignHash           = 0x04
+	INSSignTransaction    = 0x05
 )
 
 // NOTE: The current path prefix assumes we are using account 0 and don't have
@@ -222,6 +223,46 @@ func (l *Ledger) SignHash(hash []byte, addresses []uint32) ([][]byte, error) {
 	}
 	if !bytes.Equal(resp, hash) {
 		return nil, fmt.Errorf("returned hash %x does not match requested %x", resp, hash)
+	}
+
+	return l.collectSignatures(addresses)
+}
+
+
+func (l *Ledger) SignTransaction(txn []byte, addresses []uint32, changePath []uint32) ([][]byte, error) {
+	msgTX := []byte {
+		CLA,
+		INSSignTransaction,
+		0x00,
+		0x00
+	}
+	pathBytes, err := bip32bytes(pathPrefix, 3)
+	if err != nil {
+		return nil, err
+	}
+	data := []byte{byte(len(addresses))}
+	data = append(data, txn...)
+	data = append(data, pathBytes...)
+	if changePath != nil {
+		changeBytes, err := bip32bytes(changePath, 3)
+		if err != nil {
+			return nil, err
+		}
+		data = append(data, changeBytes...)
+	}
+	if err != nil {
+		return nil, err
+	}
+	msgTx = append(msgTx, byte(len(data)))
+	msgTx = append(msgTx, data...)
+	fmt.Printf("signing transaction: %x\n", txn)
+	resp, err := l.device.Exchange(msgTx)
+	if err != nil {
+		return nil, err
+	}
+
+	if !bytes.Equal(resp, txn) {
+		return nil, fmt.Errorf("returned hash %x does not match requested %x", resp, txn);
 	}
 
 	return l.collectSignatures(addresses)
