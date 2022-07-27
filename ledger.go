@@ -229,41 +229,105 @@ func (l *Ledger) SignHash(hash []byte, addresses []uint32) ([][]byte, error) {
 }
 
 
-func (l *Ledger) SignTransaction(txn []byte, addresses []uint32, changePath []uint32) ([][]byte, error) {
+func (l *Ledger) SignTransaction(txn []byte, addresses []uint32, changePath []uint32) ([]byte, [][]byte, error) {
+	
+	const (
+		SIGN_TRANSACTION_SECTION_PREAMBLE = 0x00
+		SIGN_TRANSACTION_SECTION_PAYLOAD_CHUNK = 0x01
+		SIGN_TRANSACTION_SECTION_PAYLOAD_CHUNK_LAST = 0x81
+		MAX_APDU_SIZE = 230
+	)
+	
+	msgPre := []byte {
+		CLA,
+		INSSignTransaction,
+		SIGN_TRANSACTION_SECTION_PREAMBLE,
+		0x00,
+	}
+	
+	pathBytes, err := bip32bytes(pathPrefix, 3)
+	if err != nil {
+		return nil, nil, err
+	}
+	
+	preamble := []byte{byte(len(addresses))}
+	preamble = append(preamble, pathBytes...)
+	
+	if changePath != nil {
+		changeBytes, err := bip32bytes(changePath, 3)
+		if err != nil {
+			return nil, nil, err
+		}
+		
+		preamble = append(preamble, changeBytes...)
+		msgPre[3] = 0x01
+	} 
+	
+	msgPre = append(msgPre, byte(len(preamble)))
+	msgPre = append(msgPre, preamble...)
+
+	preResp, err := l.device.Exchange(msgPre)
+	if err != nil {
+		return nil, nil, err
+	}
+        
+	fmt.Printf("preamble hash: %x\n", preResp)	
+        
+        
+	remainingData := txn
+	var response []byte
+        var thisChunk []byte
+	var txnresp []byte
+	var txnerr error
+	size := MAX_APDU_SIZE
+
 	msgTx := []byte {
 		CLA,
 		INSSignTransaction,
 		0x00,
 		0x00,
 	}
-	pathBytes, err := bip32bytes(pathPrefix, 3)
-	if err != nil {
-		return nil, err
-	}
-	data := []byte{byte(len(addresses))}
-	data = append(data, txn...)
-	data = append(data, pathBytes...)
-	if changePath != nil {
-		changeBytes, err := bip32bytes(changePath, 3)
-		if err != nil {
-			return nil, err
+
+        for len(remainingData) > 0 {
+
+		if len(remainingData) < MAX_APDU_SIZE {
+			size = cap(remainingData)
+		}		
+		
+		thisChunk = remainingData[0:size]
+		remainingData = remainingData[size:]
+				
+		if len(remainingData) == 0 {
+			msgTx[2] = SIGN_TRANSACTION_SECTION_PAYLOAD_CHUNK_LAST
+		} else {
+			msgTx[2] = SIGN_TRANSACTION_SECTION_PAYLOAD_CHUNK 
 		}
-		data = append(data, changeBytes...)
-	}
-	if err != nil {
-		return nil, err
-	}
-	msgTx = append(msgTx, byte(len(data)))
-	msgTx = append(msgTx, data...)
-	fmt.Printf("signing transaction: %x\n", txn)
-	resp, err := l.device.Exchange(msgTx)
-	if err != nil {
-		return nil, err
-	}
-
-	if !bytes.Equal(resp, txn) {
-		return nil, fmt.Errorf("returned hash %x does not match requested %x", resp, txn);
+                
+		msgTx = append(msgTx, byte(len(thisChunk)))
+		msgTx = append(msgTx, thisChunk...)
+		
+		txnresp, txnerr = l.device.Exchange(msgTx)
+		if txnerr != nil {
+			return nil, nil, txnerr
+		}
+		
+		response = append(response, byte(len(txnresp)))
+		response = append(response, txnresp...)
+		
+		msgTx = msgTx[0:3]
 	}
 
-	return l.collectSignatures(addresses)
+	rawTxHash := hashing.ComputeHash256(txn)
+	responseHash := response[0:32]
+
+	if !bytes.Equal(responseHash, rawTxHash) {
+		return nil, nil, fmt.Errorf("returned hash %x does not match requested %x", responseHash, rawTxHash);
+	}
+	
+	sigs, err := l.collectSignatures(addresses)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return responseHash, sigs, nil
 }

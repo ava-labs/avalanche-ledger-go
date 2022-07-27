@@ -58,6 +58,20 @@ func TestLedger(t *testing.T) {
 		t.Fatalf("expected 2 signatures but found %d", len(sigs))
 	}
 
+	// Sign Transaction
+	rawTxn := []byte{0x1, 0x2, 0x3, 0x4}
+	indicesTxn := []uint32{1, 3}
+	
+	resp, txnsigs, err := device.SignTransaction(rawTxn, indicesTxn, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(txnsigs) != 2 {
+		t.Fatalf("expected 2 signatures but found %d", len(txnsigs))
+	}
+	if resp == nil {
+		t.Fatalf("The response hash was null")
+	}
 	// Disconnect
 	if err := device.Disconnect(); err != nil {
 		t.Fatal(err)
