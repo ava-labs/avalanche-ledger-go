@@ -232,27 +232,36 @@ func (l *Ledger) SignHash(hash []byte, addresses []uint32) ([][]byte, error) {
 func (l *Ledger) SignTransaction(txn []byte, addresses []uint32, changePath []uint32) ([]byte, [][]byte, error) {
 	
 	const (
-		SIGN_TRANSACTION_SECTION_PREAMBLE = 0x00
 		SIGN_TRANSACTION_SECTION_PAYLOAD_CHUNK = 0x01
 		SIGN_TRANSACTION_SECTION_PAYLOAD_CHUNK_LAST = 0x81
 		MAX_APDU_SIZE = 230
 	)
 	
+	var response []byte
+        var thisChunk []byte
+	var txnerr error
+	size := MAX_APDU_SIZE
+		
 	msgPre := []byte {
 		CLA,
 		INSSignTransaction,
-		SIGN_TRANSACTION_SECTION_PREAMBLE,
+		0x00,
 		0x00,
 	}
 	
+	msgTx := []byte {
+		CLA,
+		INSSignTransaction,
+		0x00,
+		0x00,
+	}
+        
 	pathBytes, err := bip32bytes(pathPrefix, 3)
 	if err != nil {
 		return nil, nil, err
 	}
-	
 	preamble := []byte{byte(len(addresses))}
 	preamble = append(preamble, pathBytes...)
-	
 	if changePath != nil {
 		changeBytes, err := bip32bytes(changePath, 3)
 		if err != nil {
@@ -263,36 +272,18 @@ func (l *Ledger) SignTransaction(txn []byte, addresses []uint32, changePath []ui
 		msgPre[3] = 0x01
 	} 
 	
-	msgPre = append(msgPre, byte(len(preamble)))
+	msgPre = append(msgPre, (byte)(len(preamble)))	
 	msgPre = append(msgPre, preamble...)
-
+	
 	preResp, err := l.device.Exchange(msgPre)
 	if err != nil {
 		return nil, nil, err
 	}
-        
 	fmt.Printf("preamble hash: %x\n", preResp)	
-        
-        
-	remainingData := txn
-	var response []byte
-        var thisChunk []byte
-	var txnresp []byte
-	var txnerr error
-	size := MAX_APDU_SIZE
-
-	msgTx := []byte {
-		CLA,
-		INSSignTransaction,
-		0x00,
-		0x00,
-	}
+         
+	remainingData := txn	
 
         for len(remainingData) > 0 {
-
-		if len(remainingData) < MAX_APDU_SIZE {
-			size = cap(remainingData)
-		}		
 		
 		thisChunk = remainingData[0:size]
 		remainingData = remainingData[size:]
@@ -303,18 +294,14 @@ func (l *Ledger) SignTransaction(txn []byte, addresses []uint32, changePath []ui
 			msgTx[2] = SIGN_TRANSACTION_SECTION_PAYLOAD_CHUNK 
 		}
                 
-		msgTx = append(msgTx, byte(len(thisChunk)))
 		msgTx = append(msgTx, thisChunk...)
 		
-		txnresp, txnerr = l.device.Exchange(msgTx)
+		response, txnerr = l.device.Exchange(msgTx)
 		if txnerr != nil {
 			return nil, nil, txnerr
 		}
 		
-		response = append(response, byte(len(txnresp)))
-		response = append(response, txnresp...)
-		
-		msgTx = msgTx[0:3]
+		msgTx = msgTx[0:4]
 	}
 
 	rawTxHash := hashing.ComputeHash256(txn)
