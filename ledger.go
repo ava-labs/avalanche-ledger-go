@@ -275,6 +275,7 @@ func (l *Ledger) SignTransaction(txn []byte, addresses []uint32, changePath []ui
 	msgPre = append(msgPre, (byte)(len(preamble)))	
 	msgPre = append(msgPre, preamble...)
 	
+	fmt.Printf("msgPre[4]: %x, length: %x\n", msgPre[4], byte(len(msgPre)-5))
 	preResp, err := l.device.Exchange(msgPre)
 	if err != nil {
 		return nil, nil, err
@@ -284,7 +285,12 @@ func (l *Ledger) SignTransaction(txn []byte, addresses []uint32, changePath []ui
 	remainingData := txn	
 
         for len(remainingData) > 0 {
-		
+		if len(remainingData) < MAX_APDU_SIZE {
+			size = len(remainingData)
+		} else {
+			size = MAX_APDU_SIZE
+		}
+			
 		thisChunk = remainingData[0:size]
 		remainingData = remainingData[size:]
 				
@@ -293,14 +299,15 @@ func (l *Ledger) SignTransaction(txn []byte, addresses []uint32, changePath []ui
 		} else {
 			msgTx[2] = SIGN_TRANSACTION_SECTION_PAYLOAD_CHUNK 
 		}
-                
+               
+		msgTx = append(msgTx, byte(len(thisChunk))) 
 		msgTx = append(msgTx, thisChunk...)
-		
+		fmt.Printf("msgTx[4]: %x, length: %x\n", msgTx[4], byte(len(msgTx)-5))
+		fmt.Printf("msgTx Contents: %x\n", msgTx)
 		response, txnerr = l.device.Exchange(msgTx)
 		if txnerr != nil {
 			return nil, nil, txnerr
 		}
-		
 		msgTx = msgTx[0:4]
 	}
 
