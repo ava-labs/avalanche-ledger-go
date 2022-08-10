@@ -20,6 +20,7 @@ const (
 	INSPromptExtPublicKey = 0x03
 	INSSignHash           = 0x04
 	INSSignTransaction    = 0x05
+	MAX_APDU_SIZE         = 250
 )
 
 // NOTE: The current path prefix assumes we are using account 0 and don't have
@@ -228,111 +229,130 @@ func (l *Ledger) SignHash(hash []byte, addresses []uint32) ([][]byte, error) {
 	return l.collectSignatures(addresses)
 }
 
-//Sign Preamble attempts to sign the path [addresses] or also a path change by appending it
-//to the original path. This function is helper to SignTransaction
-//
-//This function will return error
-func (l *Ledger) SignPreamble(addresses []uint32, changePath []uint32) error {
-	var msgPre []byte
+func (l *Ledger) PrepareChunks(txn []byte, addresses []uint32, changePath []uint32) ([][]byte, error) {
+	if txn == nil || addresses == nil {
+		return nil, fmt.Errorf("chunks structure is undefined")
+	}
+	var chunks [][]byte
+	var preamble []byte
+	chunk_num := 0
 
 	pathBytes, err := bip32bytes(pathPrefix, 3)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	preamble := []byte{byte(len(addresses))}
+	preamble = append(preamble, byte(len(addresses)))
 	preamble = append(preamble, pathBytes...)
 	if changePath != nil {
 		changeBytes, err := bip32bytes(changePath, 3)
 		if err != nil {
-			return err
+			return nil, err
 		}
-
 		preamble = append(preamble, changeBytes...)
-		msgPre = []byte{
-			CLA,
-			INSSignTransaction,
-			0x01,
-			0x00,
-		}
-	} else {
-		msgPre = []byte{
-			CLA,
-			INSSignTransaction,
-			0x00,
-			0x00,
-		}
 	}
+	preamble = append([]byte{byte(len(preamble))}, preamble...)
+	chunks = append(chunks, preamble)
+	chunk_num++
 
-	msgPre = append(msgPre, (byte)(len(preamble)))
-	msgPre = append(msgPre, preamble...)
+	fmt.Printf("Preamble: %x\n", chunks[0])
 
-	fmt.Printf("msgPre[4]: %x, length: %x\n", msgPre[4], byte(len(msgPre)-5))
-	preResp, err := l.device.Exchange(msgPre)
-	if err != nil {
-		return err
+	remainingData := txn
+	size := MAX_APDU_SIZE
+
+	for len(remainingData) > 0 {
+		if len(remainingData) < MAX_APDU_SIZE {
+			size = len(remainingData)
+		}
+		thisChunk := remainingData[0:size]
+		remainingData = remainingData[size:]
+
+		temp := make([]byte, 0)
+		temp = append(temp, byte(len(thisChunk)))
+		temp = append(temp, thisChunk...)
+		chunks = append(chunks, temp)
+		chunk_num++
 	}
-	fmt.Printf("preamble hash: %x\n", preResp)
-
-	return nil
+	fmt.Printf("chunk1: %x\nchunk2: %x\nchunk3: %x\n", chunks[0], chunks[1], chunks[2])
+	return chunks, nil
 }
 
 //SignTransaction attempts to sign a valid tx [txn], given a path [addresses]
 //
 //This function will return a signed hash of txn and signatures or an error
 func (l *Ledger) SignTransaction(txn []byte, addresses []uint32, changePath []uint32) ([]byte, [][]byte, error) {
+	if txn == nil || addresses == nil {
+		return nil, nil, fmt.Errorf("transaction or addresses was null")
+	}
 
-	const (
-		SIGN_TRANSACTION_SECTION_PAYLOAD_CHUNK      = 0x01
-		SIGN_TRANSACTION_SECTION_PAYLOAD_CHUNK_LAST = 0x81
-		MAX_APDU_SIZE                               = 230
-	)
+	var response []byte
 
-	err := l.SignPreamble(addresses, changePath)
+	chunks, err := l.PrepareChunks(txn, addresses, changePath)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	var response []byte
-	var thisChunk []byte
-	var msgTx []byte
-	size := MAX_APDU_SIZE
-	remainingData := txn
+	chunk_idx := 0
+	chunk_num := len(chunks)
 
-	for len(remainingData) > 0 {
-		if len(remainingData) < MAX_APDU_SIZE {
-			size = len(remainingData)
-		} else {
-			size = MAX_APDU_SIZE
+	msgTx := []byte{
+		CLA,
+		INSSignTransaction,
+		0x00,
+		0x00,
+	}
+
+	//send preamble first
+	msgTx = append(msgTx, chunks[chunk_idx]...)
+	chunk_idx++
+	preResp, err := l.device.Exchange(msgTx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	fmt.Printf("Preamble reponse: %x\n", preResp)
+
+	if chunk_idx == chunk_num {
+		msgTx = []byte{
+			CLA,
+			INSSignTransaction,
+			0x02,
+			0x00,
 		}
-
-		thisChunk = remainingData[0:size]
-		remainingData = remainingData[size:]
-
-		if len(remainingData) == 0 {
+		msgTx = append(msgTx, chunks[chunk_idx]...)
+		response, err = l.device.Exchange(msgTx)
+		if err != nil {
+			return nil, nil, err
+		}
+	} else {
+		for chunk_idx < chunk_num {
 			msgTx = []byte{
 				CLA,
 				INSSignTransaction,
-				SIGN_TRANSACTION_SECTION_PAYLOAD_CHUNK_LAST,
+				0x01,
 				0x00,
 			}
-		} else {
-			msgTx = []byte{
-				CLA,
-				INSSignTransaction,
-				SIGN_TRANSACTION_SECTION_PAYLOAD_CHUNK,
-				0x00,
+			msgTx = append(msgTx, chunks[chunk_idx]...)
+			txnResp, err := l.device.Exchange(msgTx)
+			if err != nil {
+				return nil, nil, err
+			}
+			response = append(response, txnResp...)
+			chunk_idx++
+			if chunk_idx == chunk_num {
+				msgTx = []byte{
+					CLA,
+					INSSignTransaction,
+					0x02,
+					0x00,
+				}
+				msgTx = append(msgTx, chunks[chunk_idx]...)
+				txnResp, err = l.device.Exchange(msgTx)
+				if err != nil {
+					return nil, nil, err
+				}
+				response = append(response, txnResp...)
 			}
 		}
-
-		msgTx = append(msgTx, byte(len(thisChunk)))
-		msgTx = append(msgTx, thisChunk...)
-		fmt.Printf("msgTx[4]: %x, length: %x\n", msgTx[4], byte(len(msgTx)-5))
-		fmt.Printf("msgTx Contents: %x\n", msgTx)
-		txresp, txnerr := l.device.Exchange(msgTx)
-		if txnerr != nil {
-			return nil, nil, txnerr
-		}
-		response = append(response, txresp...)
 	}
 
 	rawTxHash := hashing.ComputeHash256(txn)
