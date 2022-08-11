@@ -20,20 +20,20 @@ const (
 	INSPromptExtPublicKey = 0x03
 	INSSignHash           = 0x04
 	INSSignTransaction    = 0x05
-	MAX_APDU_SIZE         = 250
+	MAX_APDU_SIZE         = 230
 )
 
 // NOTE: The current path prefix assumes we are using account 0 and don't have
 // any change addresses
 var pathPrefix = []uint32{44, 9000, 0, 0}
 
-func (l *Ledger) collectSignatures(addresses []uint32) ([][]byte, error) {
+func (l *Ledger) collectSignatures(addresses []uint32, ins byte, p1_continue byte, p1_final byte) ([][]byte, error) {
 	results := make([][]byte, len(addresses))
 	for i := 0; i < len(addresses); i++ {
 		suffix := []uint32{addresses[i]}
-		p1 := 0x01
+		p1 := p1_continue
 		if i == len(addresses)-1 {
-			p1 = 0x81
+			p1 = p1_final
 		}
 		data, err := bip32bytes(suffix, 0)
 		if err != nil {
@@ -41,8 +41,8 @@ func (l *Ledger) collectSignatures(addresses []uint32) ([][]byte, error) {
 		}
 		msgSig := []byte{
 			CLA,
-			INSSignHash,
-			byte(p1),
+			ins,
+			p1,
 			0x0,
 		}
 		msgSig = append(msgSig, byte(len(data)))
@@ -226,7 +226,7 @@ func (l *Ledger) SignHash(hash []byte, addresses []uint32) ([][]byte, error) {
 		return nil, fmt.Errorf("returned hash %x does not match requested %x", resp, hash)
 	}
 
-	return l.collectSignatures(addresses)
+	return l.collectSignatures(addresses, INSSignHash, 0x01, 0x81)
 }
 
 func (l *Ledger) PrepareChunks(txn []byte, addresses []uint32, changePath []uint32) ([][]byte, error) {
@@ -272,7 +272,7 @@ func (l *Ledger) PrepareChunks(txn []byte, addresses []uint32, changePath []uint
 		chunks = append(chunks, temp)
 		chunk_num++
 	}
-	fmt.Printf("chunk1: %x\nchunk2: %x\nchunk3: %x\n", chunks[0], chunks[1], chunks[2])
+	//fmt.Printf("chunk1: %x\nchunk2: %x\nchunk3: %x\n", chunks[0], chunks[1], chunks[2])
 	return chunks, nil
 }
 
@@ -315,7 +315,7 @@ func (l *Ledger) SignTransaction(txn []byte, addresses []uint32, changePath []ui
 		msgTx = []byte{
 			CLA,
 			INSSignTransaction,
-			0x02,
+			0x81,
 			0x00,
 		}
 		msgTx = append(msgTx, chunks[chunk_idx]...)
@@ -324,7 +324,7 @@ func (l *Ledger) SignTransaction(txn []byte, addresses []uint32, changePath []ui
 			return nil, nil, err
 		}
 	} else {
-		for chunk_idx < chunk_num {
+		for chunk_idx < chunk_num-1 {
 			msgTx = []byte{
 				CLA,
 				INSSignTransaction,
@@ -338,11 +338,11 @@ func (l *Ledger) SignTransaction(txn []byte, addresses []uint32, changePath []ui
 			}
 			response = append(response, txnResp...)
 			chunk_idx++
-			if chunk_idx == chunk_num {
+			if chunk_idx == chunk_num-1 {
 				msgTx = []byte{
 					CLA,
 					INSSignTransaction,
-					0x02,
+					0x81,
 					0x00,
 				}
 				msgTx = append(msgTx, chunks[chunk_idx]...)
@@ -362,7 +362,7 @@ func (l *Ledger) SignTransaction(txn []byte, addresses []uint32, changePath []ui
 		return nil, nil, fmt.Errorf("returned hash %x does not match requested %x", responseHash, rawTxHash)
 	}
 
-	sigs, err := l.collectSignatures(addresses)
+	sigs, err := l.collectSignatures(addresses, INSSignTransaction, 0x02, 0x82)
 	if err != nil {
 		return nil, nil, err
 	}
