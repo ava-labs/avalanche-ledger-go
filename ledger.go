@@ -236,7 +236,7 @@ func (l *Ledger) PrepareChunks(txn []byte, addresses []uint32, changePath []uint
 	}
 	var chunks [][]byte
 	var preamble []byte
-	chunk_num := 0
+	chunkNum := 0
 
 	pathBytes, err := bip32bytes(pathPrefix, 3)
 	if err != nil {
@@ -253,7 +253,7 @@ func (l *Ledger) PrepareChunks(txn []byte, addresses []uint32, changePath []uint
 	}
 	preamble = append([]byte{byte(len(preamble))}, preamble...)
 	chunks = append(chunks, preamble)
-	chunk_num++
+	chunkNum++
 
 	fmt.Printf("Preamble: %x\n", chunks[0])
 
@@ -271,15 +271,14 @@ func (l *Ledger) PrepareChunks(txn []byte, addresses []uint32, changePath []uint
 		temp = append(temp, byte(len(thisChunk)))
 		temp = append(temp, thisChunk...)
 		chunks = append(chunks, temp)
-		chunk_num++
+		chunkNum++
 	}
-	//fmt.Printf("chunk1: %x\nchunk2: %x\nchunk3: %x\n", chunks[0], chunks[1], chunks[2])
+
 	return chunks, nil
 }
 
-//SignTransaction attempts to sign a valid tx [txn], given a path [addresses]
-//
-//This function will return a signed hash of txn and signatures or an error
+// SignTransaction attempts to sign a valid tx [txn], given a path [addresses]
+// This function will return a signed hash of txn and signatures or an error
 func (l *Ledger) SignTransaction(txn []byte, addresses []uint32, changePath []uint32) ([]byte, [][]byte, error) {
 	if txn == nil || addresses == nil {
 		return nil, nil, fmt.Errorf("transaction or addresses was null")
@@ -292,32 +291,32 @@ func (l *Ledger) SignTransaction(txn []byte, addresses []uint32, changePath []ui
 		return nil, nil, err
 	}
 
-	chunk_idx := 0
-	chunk_num := len(chunks)
+	chunkIdx := 0
+	chunkNum := len(chunks) - 1
 
-	//send preamble first
-	preResp, err := l.SendToLedger(CLA, INSSignTransaction, 0x00, 0x00, chunks[chunk_idx])
+	// send preamble first
+	preResp, err := l.SendToLedger(CLA, INSSignTransaction, 0x00, 0x00, chunks[chunkIdx])
 	if err != nil {
 		return nil, nil, err
 	}
-	chunk_idx++
+	chunkIdx++
 
-	fmt.Printf("Preamble reponse: %x\n", preResp)
+	fmt.Printf("Preamble response: %x\n", preResp)
 
-	if chunk_idx == chunk_num {
-		response, err = l.SendToLedger(CLA, INSSignTransaction, 0x81, 0x00, chunks[chunk_idx])
+	if chunkIdx == chunkNum {
+		response, err = l.SendToLedger(CLA, INSSignTransaction, 0x81, 0x00, chunks[chunkIdx])
 		if err != nil {
 			return nil, nil, err
 		}
 	} else {
-		for chunk_idx < chunk_num-1 {
-			response, err = l.SendToLedger(CLA, INSSignTransaction, 0x01, 0x00, chunks[chunk_idx])
+		for chunkIdx < chunkNum {
+			response, err = l.SendToLedger(CLA, INSSignTransaction, 0x01, 0x00, chunks[chunkIdx])
 			if err != nil {
 				return nil, nil, err
 			}
-			chunk_idx++
-			if chunk_idx == chunk_num-1 {
-				response, err = l.SendToLedger(CLA, INSSignTransaction, 0x81, 0x00, chunks[chunk_idx])
+			chunkIdx++
+			if chunkIdx == chunkNum {
+				response, err = l.SendToLedger(CLA, INSSignTransaction, 0x81, 0x00, chunks[chunkIdx])
 				if err != nil {
 					return nil, nil, err
 				}
