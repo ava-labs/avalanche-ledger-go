@@ -20,7 +20,7 @@ const (
 	INSPromptExtPublicKey = 0x03
 	INSSignHash           = 0x04
 	INSSignTransaction    = 0x05
-	MAX_APDU_SIZE         = 230
+	MaxApduSize           = 230
 )
 
 func (l *Ledger) SendToLedger(cla byte, ins byte, p1 byte, p2 byte, buffer []byte) ([]byte, error) {
@@ -44,13 +44,13 @@ func (l *Ledger) SendToLedger(cla byte, ins byte, p1 byte, p2 byte, buffer []byt
 // any change addresses
 var pathPrefix = []uint32{44, 9000, 0, 0}
 
-func (l *Ledger) collectSignatures(addresses []uint32, ins byte, p1_continue byte, p1_final byte) ([][]byte, error) {
+func (l *Ledger) collectSignatures(addresses []uint32, ins byte, p1Continue byte, p1Final byte) ([][]byte, error) {
 	results := make([][]byte, len(addresses))
 	for i := 0; i < len(addresses); i++ {
 		suffix := []uint32{addresses[i]}
-		p1 := p1_continue
+		p1 := p1Continue
 		if i == len(addresses)-1 {
-			p1 = p1_final
+			p1 = p1Final
 		}
 		data, err := bip32bytes(suffix, 0)
 		if err != nil {
@@ -258,10 +258,10 @@ func (l *Ledger) PrepareChunks(txn []byte, addresses []uint32, changePath []uint
 	fmt.Printf("Preamble: %x\n", chunks[0])
 
 	remainingData := txn
-	size := MAX_APDU_SIZE
+	size := MaxApduSize
 
 	for len(remainingData) > 0 {
-		if len(remainingData) < MAX_APDU_SIZE {
+		if len(remainingData) < MaxApduSize {
 			size = len(remainingData)
 		}
 		thisChunk := remainingData[0:size]
@@ -292,7 +292,6 @@ func (l *Ledger) SignTransaction(txn []byte, addresses []uint32, changePath []ui
 	}
 
 	chunkIdx := 0
-	chunkNum := len(chunks) - 1
 
 	// send preamble first
 	preResp, err := l.SendToLedger(CLA, INSSignTransaction, 0x00, 0x00, chunks[chunkIdx])
@@ -303,25 +302,17 @@ func (l *Ledger) SignTransaction(txn []byte, addresses []uint32, changePath []ui
 
 	fmt.Printf("Preamble response: %x\n", preResp)
 
-	if chunkIdx == chunkNum {
-		response, err = l.SendToLedger(CLA, INSSignTransaction, 0x81, 0x00, chunks[chunkIdx])
+	for chunkIdx < len(chunks)-1 {
+		_, err = l.SendToLedger(CLA, INSSignTransaction, 0x01, 0x00, chunks[chunkIdx])
 		if err != nil {
 			return nil, nil, err
 		}
-	} else {
-		for chunkIdx < chunkNum {
-			response, err = l.SendToLedger(CLA, INSSignTransaction, 0x01, 0x00, chunks[chunkIdx])
-			if err != nil {
-				return nil, nil, err
-			}
-			chunkIdx++
-			if chunkIdx == chunkNum {
-				response, err = l.SendToLedger(CLA, INSSignTransaction, 0x81, 0x00, chunks[chunkIdx])
-				if err != nil {
-					return nil, nil, err
-				}
-			}
-		}
+		chunkIdx++
+	}
+
+	response, err = l.SendToLedger(CLA, INSSignTransaction, 0x81, 0x00, chunks[chunkIdx])
+	if err != nil {
+		return nil, nil, err
 	}
 
 	rawTxHash := hashing.ComputeHash256(txn)
