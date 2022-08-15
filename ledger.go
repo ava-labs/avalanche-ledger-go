@@ -23,6 +23,23 @@ const (
 	MAX_APDU_SIZE         = 230
 )
 
+func (l *Ledger) SendToLedger(cla byte, ins byte, p1 byte, p2 byte, buffer []byte) ([]byte, error) {
+	msgSend := []byte{
+		cla,
+		ins,
+		p1,
+		p2,
+	}
+
+	msgSend = append(msgSend, buffer...)
+	response, err := l.device.Exchange(msgSend)
+	if err != nil {
+		return nil, err
+	}
+
+	return response, nil
+}
+
 // NOTE: The current path prefix assumes we are using account 0 and don't have
 // any change addresses
 var pathPrefix = []uint32{44, 9000, 0, 0}
@@ -39,15 +56,10 @@ func (l *Ledger) collectSignatures(addresses []uint32, ins byte, p1_continue byt
 		if err != nil {
 			return nil, err
 		}
-		msgSig := []byte{
-			CLA,
-			ins,
-			p1,
-			0x0,
-		}
-		msgSig = append(msgSig, byte(len(data)))
-		msgSig = append(msgSig, data...)
-		sig, err := l.device.Exchange(msgSig)
+		var sendData []byte
+		sendData = append(sendData, byte(len(data)))
+		sendData = append(sendData, data...)
+		sig, err := l.SendToLedger(CLA, ins, p1, 0x00, sendData)
 		if err != nil {
 			return nil, err
 		}
@@ -144,19 +156,15 @@ func (l *Ledger) Address(hrp string, addressIndex uint32) (*Address, error) {
 }
 
 func (l *Ledger) getExtendedPublicKey() ([]byte, []byte, error) {
-	msgEPK := []byte{
-		CLA,
-		INSPromptExtPublicKey,
-		0x0,
-		0x0,
-	}
+	var data []byte
 	pathBytes, err := bip32bytes(pathPrefix, 3)
 	if err != nil {
 		return nil, nil, err
 	}
-	msgEPK = append(msgEPK, byte(len(pathBytes)))
-	msgEPK = append(msgEPK, pathBytes...)
-	response, err := l.device.Exchange(msgEPK)
+
+	data = append(data, byte(len(pathBytes)))
+	data = append(data, pathBytes...)
+	response, err := l.SendToLedger(CLA, INSPromptExtPublicKey, 0x00, 0x00, data)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -202,12 +210,6 @@ func (l *Ledger) Addresses(hrp string, addresses int) ([]*Address, error) {
 // SignHash attempts to sign the [hash] with the provided path [addresses].
 // [addresses] are appened to the [pathPrefix] (m/44'/9000'/0'/0).
 func (l *Ledger) SignHash(hash []byte, addresses []uint32) ([][]byte, error) {
-	msgHash := []byte{
-		CLA,
-		INSSignHash,
-		0x0,
-		0x0,
-	}
 	pathBytes, err := bip32bytes(pathPrefix, 3)
 	if err != nil {
 		return nil, err
@@ -215,10 +217,9 @@ func (l *Ledger) SignHash(hash []byte, addresses []uint32) ([][]byte, error) {
 	data := []byte{byte(len(addresses))}
 	data = append(data, hash...)
 	data = append(data, pathBytes...)
-	msgHash = append(msgHash, byte(len(data)))
-	msgHash = append(msgHash, data...)
+	data = append([]byte{byte(len(data))}, data...)
 	fmt.Printf("signing hash: %X\n", hash)
-	resp, err := l.device.Exchange(msgHash)
+	resp, err := l.SendToLedger(CLA, INSSignHash, 0x00, 0x00, data)
 	if err != nil {
 		return nil, err
 	}
@@ -294,63 +295,32 @@ func (l *Ledger) SignTransaction(txn []byte, addresses []uint32, changePath []ui
 	chunk_idx := 0
 	chunk_num := len(chunks)
 
-	msgTx := []byte{
-		CLA,
-		INSSignTransaction,
-		0x00,
-		0x00,
-	}
-
 	//send preamble first
-	msgTx = append(msgTx, chunks[chunk_idx]...)
-	chunk_idx++
-	preResp, err := l.device.Exchange(msgTx)
+	preResp, err := l.SendToLedger(CLA, INSSignTransaction, 0x00, 0x00, chunks[chunk_idx])
 	if err != nil {
 		return nil, nil, err
 	}
+	chunk_idx++
 
 	fmt.Printf("Preamble reponse: %x\n", preResp)
 
 	if chunk_idx == chunk_num {
-		msgTx = []byte{
-			CLA,
-			INSSignTransaction,
-			0x81,
-			0x00,
-		}
-		msgTx = append(msgTx, chunks[chunk_idx]...)
-		response, err = l.device.Exchange(msgTx)
+		response, err = l.SendToLedger(CLA, INSSignTransaction, 0x81, 0x00, chunks[chunk_idx])
 		if err != nil {
 			return nil, nil, err
 		}
 	} else {
 		for chunk_idx < chunk_num-1 {
-			msgTx = []byte{
-				CLA,
-				INSSignTransaction,
-				0x01,
-				0x00,
-			}
-			msgTx = append(msgTx, chunks[chunk_idx]...)
-			txnResp, err := l.device.Exchange(msgTx)
+			response, err = l.SendToLedger(CLA, INSSignTransaction, 0x01, 0x00, chunks[chunk_idx])
 			if err != nil {
 				return nil, nil, err
 			}
-			response = append(response, txnResp...)
 			chunk_idx++
 			if chunk_idx == chunk_num-1 {
-				msgTx = []byte{
-					CLA,
-					INSSignTransaction,
-					0x81,
-					0x00,
-				}
-				msgTx = append(msgTx, chunks[chunk_idx]...)
-				txnResp, err = l.device.Exchange(msgTx)
+				response, err = l.SendToLedger(CLA, INSSignTransaction, 0x81, 0x00, chunks[chunk_idx])
 				if err != nil {
 					return nil, nil, err
 				}
-				response = append(response, txnResp...)
 			}
 		}
 	}
