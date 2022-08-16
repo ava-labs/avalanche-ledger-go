@@ -144,7 +144,7 @@ func TestLedger(t *testing.T) {
 		t.Fatalf("expected 1 signature but found %d", len(txnsigs))
 	}
 	if resp == nil {
-		t.Fatalf("The response hash was null")
+		t.Fatalf("The response hash was nil")
 	}
 	// Disconnect
 	if err := device.Disconnect(); err != nil {

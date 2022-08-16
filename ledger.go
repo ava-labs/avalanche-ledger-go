@@ -24,20 +24,16 @@ const (
 )
 
 func (l *Ledger) SendToLedger(cla byte, ins byte, p1 byte, p2 byte, buffer []byte) ([]byte, error) {
-	msgSend := []byte{
+	msgSend := append([]byte{
 		cla,
 		ins,
 		p1,
 		p2,
-	}
+	},
+		buffer...,
+	)
 
-	msgSend = append(msgSend, buffer...)
-	response, err := l.device.Exchange(msgSend)
-	if err != nil {
-		return nil, err
-	}
-
-	return response, nil
+	return l.device.Exchange(msgSend)
 }
 
 // NOTE: The current path prefix assumes we are using account 0 and don't have
@@ -73,6 +69,14 @@ func (l *Ledger) collectSignatures(addresses []uint32, ins byte, p1Continue byte
 // provides Avalanche-specific access.
 type Ledger struct {
 	device ledger_go.LedgerDevice
+}
+
+func (l *Ledger) PrependLength(buffer []byte) ([]byte, error) {
+	if len(buffer) == 0 {
+		return nil, fmt.Errorf("could not prepend length, as buffer was empty")
+	}
+	retBuffer := append([]byte{byte(len(buffer))}, buffer...)
+	return retBuffer, nil
 }
 
 // Connect attempts to connect to a Ledger on the device over HID.
@@ -217,7 +221,10 @@ func (l *Ledger) SignHash(hash []byte, addresses []uint32) ([][]byte, error) {
 	data := []byte{byte(len(addresses))}
 	data = append(data, hash...)
 	data = append(data, pathBytes...)
-	data = append([]byte{byte(len(data))}, data...)
+	data, err = l.PrependLength(data)
+	if err != nil {
+		return nil, err
+	}
 	fmt.Printf("signing hash: %X\n", hash)
 	resp, err := l.SendToLedger(CLA, INSSignHash, 0x00, 0x00, data)
 	if err != nil {
@@ -231,12 +238,13 @@ func (l *Ledger) SignHash(hash []byte, addresses []uint32) ([][]byte, error) {
 }
 
 func (l *Ledger) PrepareChunks(txn []byte, addresses []uint32, changePath []uint32) ([][]byte, error) {
-	if txn == nil || addresses == nil {
+	if len(txn) == 0 || len(addresses) == 0 {
 		return nil, fmt.Errorf("chunks structure is undefined")
 	}
-	var chunks [][]byte
-	var preamble []byte
-	chunkNum := 0
+	var (
+		chunks   [][]byte
+		preamble []byte
+	)
 
 	pathBytes, err := bip32bytes(pathPrefix, 3)
 	if err != nil {
@@ -244,18 +252,18 @@ func (l *Ledger) PrepareChunks(txn []byte, addresses []uint32, changePath []uint
 	}
 	preamble = append(preamble, byte(len(addresses)))
 	preamble = append(preamble, pathBytes...)
-	if changePath != nil {
+	if len(changePath) != 0 {
 		changeBytes, err := bip32bytes(changePath, 3)
 		if err != nil {
 			return nil, err
 		}
 		preamble = append(preamble, changeBytes...)
 	}
-	preamble = append([]byte{byte(len(preamble))}, preamble...)
+	preamble, err = l.PrependLength(preamble)
+	if err != nil {
+		return nil, err
+	}
 	chunks = append(chunks, preamble)
-	chunkNum++
-
-	fmt.Printf("Preamble: %x\n", chunks[0])
 
 	remainingData := txn
 	size := MaxApduSize
@@ -264,14 +272,13 @@ func (l *Ledger) PrepareChunks(txn []byte, addresses []uint32, changePath []uint
 		if len(remainingData) < MaxApduSize {
 			size = len(remainingData)
 		}
-		thisChunk := remainingData[0:size]
+		thisChunk := remainingData[:size]
 		remainingData = remainingData[size:]
 
 		temp := make([]byte, 0)
 		temp = append(temp, byte(len(thisChunk)))
 		temp = append(temp, thisChunk...)
 		chunks = append(chunks, temp)
-		chunkNum++
 	}
 
 	return chunks, nil
@@ -280,52 +287,39 @@ func (l *Ledger) PrepareChunks(txn []byte, addresses []uint32, changePath []uint
 // SignTransaction attempts to sign a valid tx [txn], given a path [addresses]
 // This function will return a signed hash of txn and signatures or an error
 func (l *Ledger) SignTransaction(txn []byte, addresses []uint32, changePath []uint32) ([]byte, [][]byte, error) {
-	if txn == nil || addresses == nil {
-		return nil, nil, fmt.Errorf("transaction or addresses was null")
-	}
-
-	var response []byte
-
 	chunks, err := l.PrepareChunks(txn, addresses, changePath)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	chunkIdx := 0
-
 	// send preamble first
-	preResp, err := l.SendToLedger(CLA, INSSignTransaction, 0x00, 0x00, chunks[chunkIdx])
+	preResp, err := l.SendToLedger(CLA, INSSignTransaction, 0x00, 0x00, chunks[0])
 	if err != nil {
 		return nil, nil, err
 	}
-	chunkIdx++
 
-	fmt.Printf("Preamble response: %x\n", preResp)
+	fmt.Printf("length of preResp: %d\n", len(preResp))
 
-	for chunkIdx < len(chunks)-1 {
-		_, err = l.SendToLedger(CLA, INSSignTransaction, 0x01, 0x00, chunks[chunkIdx])
+	lastChunkIdx := len(chunks) - 1
+	for i := 1; i < lastChunkIdx; i++ {
+		_, err = l.SendToLedger(CLA, INSSignTransaction, 0x01, 0x00, chunks[i])
 		if err != nil {
 			return nil, nil, err
 		}
-		chunkIdx++
 	}
 
-	response, err = l.SendToLedger(CLA, INSSignTransaction, 0x81, 0x00, chunks[chunkIdx])
+	response, err := l.SendToLedger(CLA, INSSignTransaction, 0x81, 0x00, chunks[lastChunkIdx])
 	if err != nil {
 		return nil, nil, err
 	}
 
 	rawTxHash := hashing.ComputeHash256(txn)
-	responseHash := response[0:32]
+	responseHash := response[0:hashing.HashLen]
 
 	if !bytes.Equal(responseHash, rawTxHash) {
 		return nil, nil, fmt.Errorf("returned hash %x does not match requested %x", responseHash, rawTxHash)
 	}
 
 	sigs, err := l.collectSignatures(addresses, INSSignTransaction, 0x02, 0x82)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return responseHash, sigs, nil
+	return responseHash, sigs, err
 }
