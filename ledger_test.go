@@ -59,6 +59,7 @@ func TestLedger(t *testing.T) {
 	}
 
 	// Sign Transaction
+	// Add Validator Transaction
 	rawTxn := []byte{ // base tx:
 		0x00, 0x00,
 		0x00, 0x00, 0x00, 0x0c, 0x00, 0x00, 0x30, 0x39,
@@ -133,6 +134,8 @@ func TestLedger(t *testing.T) {
 		// Shares
 		0x00, 0x00, 0x00, 0x64,
 	}
+
+	fmt.Printf("Length of tx: %d\n", len(rawTxn))
 
 	indicesTxn := []uint32{1}
 

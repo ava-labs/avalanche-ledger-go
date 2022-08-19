@@ -296,9 +296,9 @@ func (l *Ledger) SignTransaction(txn []byte, addresses []uint32, changePath []ui
 	preResp, err := l.SendToLedger(CLA, INSSignTransaction, 0x00, 0x00, chunks[0])
 	if err != nil {
 		return nil, nil, err
+	} else if len(preResp) != 0 {
+		return nil, nil, fmt.Errorf("the preamble response should be empty")
 	}
-
-	fmt.Printf("length of preResp: %d\n", len(preResp))
 
 	lastChunkIdx := len(chunks) - 1
 	for i := 1; i < lastChunkIdx; i++ {
