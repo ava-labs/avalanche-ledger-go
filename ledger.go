@@ -23,6 +23,7 @@ const (
 	MaxApduSize           = 230
 )
 
+// Internal wrapper for Exchange function
 func (l *Ledger) SendToLedger(cla byte, ins byte, p1 byte, p2 byte, buffer []byte) ([]byte, error) {
 	msgSend := append([]byte{
 		cla,
@@ -40,6 +41,13 @@ func (l *Ledger) SendToLedger(cla byte, ins byte, p1 byte, p2 byte, buffer []byt
 // any change addresses
 var pathPrefix = []uint32{44, 9000, 0, 0}
 
+// collectSignatures returns an array of signatures associated with an address by index
+// p1Continue -> is a flag that indicates that not all of the addresses have been signed yet so keep going
+//     - if ins == INSSignHash then p1Continue == 0x01
+//     - if ins == INSSignTransacton then p1Continue == 0x02
+// p1CFinal -> is a flag that indicates that it is on the last address to be signed
+//     - if ins == INSSignHash then p1Continue == 0x81
+//     - if ins == INSSignTransacton then p1Continue == 0x82
 func (l *Ledger) collectSignatures(addresses []uint32, ins byte, p1Continue byte, p1Final byte) ([][]byte, error) {
 	results := make([][]byte, len(addresses))
 	for i := 0; i < len(addresses); i++ {
