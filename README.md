@@ -163,7 +163,7 @@ t.Fatal(err)
      -    [Parameters](#paramaters-4)
      -    [Retval](#retval-4)
 
-#### FileParameters
+### FileParameters
 
 -    `CLA` byte -> flag in apdu header to signify whether it is AVM or EVM (0x80 or 0xe0) respectively, for parsing
 -    `INSVersion` byte -> flag in apdu header to signify data is requesting version info
@@ -173,7 +173,7 @@ t.Fatal(err)
 -    `INSSignTransaction` byte -> flag in apdu header to signify data is sending transaction to be parsed and signed
 -    `MaxApduSize` byte -> maximum size of buffer that is sent to the apdu
 
-#### Version
+### Version
 
 #### Description
 
@@ -191,7 +191,7 @@ on the ledger will return an error.
 
 -    `None`
 
-#### Address
+### Address
 
 #### Description
 
@@ -206,7 +206,7 @@ This function will return a Avalanche-formatted address with a provided hrp
 
 -    `*Address` -> returns a pointer to an Address
 
-#### Addresses
+### Addresses
 
 #### Description
 
@@ -221,7 +221,7 @@ This function will return an array of Avalanche-formatted addresses with a provi
 
 -    `[]*Address` -> returns an array of pointers to addresses
 
-#### SignHash
+### SignHash
 
 #### Description
 
@@ -236,7 +236,7 @@ This function will return the signature or signatures for signing the hash
 
 -    `[][]byte` -> returns an array of signatures associated with an address sharing indices
 
-#### SignTransaction
+### SignTransaction
 
 #### Description
 
