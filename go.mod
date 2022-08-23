@@ -1,6 +1,6 @@
 module github.com/ava-labs/avalanche-ledger-go
 
-go 1.17
+go 1.18
 
 require (
 	github.com/FactomProject/btcutilecc v0.0.0-20130527213604-d3a63a5752ec
