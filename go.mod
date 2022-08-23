@@ -4,7 +4,7 @@ go 1.17
 
 require (
 	github.com/FactomProject/btcutilecc v0.0.0-20130527213604-d3a63a5752ec
-	github.com/ava-labs/avalanchego v1.7.17
+	github.com/ava-labs/avalanchego v1.7.18
 	github.com/zondax/ledger-go v0.12.2
 )
 
@@ -39,7 +39,7 @@ require (
 	golang.org/x/sys v0.0.0-20220722155257-8c9f86f7a55f // indirect
 	golang.org/x/text v0.3.7 // indirect
 	google.golang.org/genproto v0.0.0-20220712132514-bdd2acd4974d // indirect
-	google.golang.org/grpc v1.47.0 // indirect
+	google.golang.org/grpc v1.50.0-dev // indirect
 	google.golang.org/protobuf v1.28.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
