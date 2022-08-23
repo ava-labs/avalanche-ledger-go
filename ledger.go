@@ -247,7 +247,7 @@ func (l *Ledger) SignHash(hash []byte, addresses []uint32) ([][]byte, error) {
 
 func (l *Ledger) PrepareChunks(txn []byte, addresses []uint32, changePath []uint32) ([][]byte, error) {
 	if len(txn) == 0 || len(addresses) == 0 {
-		return nil, fmt.Errorf("chunks structure is undefined")
+		return nil, fmt.Errorf("the transaction buffer is empty")
 	}
 	var (
 		chunks   [][]byte
