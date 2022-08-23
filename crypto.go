@@ -50,11 +50,11 @@ func getIntermediary(key []byte, chainCode []byte, childIdx uint32) ([]byte, err
 	// Pack data bytes (assumes unhardened)
 	childIndexBytes := make([]byte, 4)
 	binary.BigEndian.PutUint32(childIndexBytes, childIdx)
-	data := append(ckey, childIndexBytes...)
+	ckey = append(ckey, childIndexBytes...)
 
 	// Compute HMAC
 	hmac := hmac.New(sha512.New, chainCode)
-	if _, err := hmac.Write(data); err != nil {
+	if _, err := hmac.Write(ckey); err != nil {
 		return nil, err
 	}
 	return hmac.Sum(nil), nil
