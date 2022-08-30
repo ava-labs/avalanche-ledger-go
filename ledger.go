@@ -8,7 +8,7 @@ import (
 	"fmt"
 
 	"github.com/ava-labs/avalanchego/ids"
-	"github.com/ava-labs/avalanchego/utils/formatting"
+	"github.com/ava-labs/avalanchego/utils/formatting/address"
 	"github.com/ava-labs/avalanchego/utils/hashing"
 	ledger_go "github.com/zondax/ledger-go"
 )
@@ -153,7 +153,7 @@ func (l *Ledger) Address(hrp string, addressIndex uint32) (*Address, error) {
 		return nil, err
 	}
 
-	addr, err := formatting.FormatBech32(hrp, rawAddress)
+	addr, err := address.FormatBech32(hrp, rawAddress)
 	if err != nil {
 		return nil, err
 	}
@@ -207,7 +207,7 @@ func (l *Ledger) Addresses(hrp string, addresses int) ([]*Address, error) {
 		if err != nil {
 			return nil, err
 		}
-		addr, err := formatting.FormatBech32(hrp, shortAddr[:])
+		addr, err := address.FormatBech32(hrp, shortAddr[:])
 		if err != nil {
 			return nil, err
 		}
