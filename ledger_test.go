@@ -27,14 +27,14 @@ func TestLedger(t *testing.T) {
 	fmt.Printf("version: %s commit: %s name: %s\n", version, commit, name)
 
 	// Get Fuji Address
-	address, err := device.Address("fuji", 0)
+	address, err := device.Address(0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	fmt.Printf("address: %+v\n", address)
 
 	// Get Extended Addresses
-	addresses, err := device.Addresses("fuji", 10)
+	addresses, err := device.Addresses(10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,8 +42,8 @@ func TestLedger(t *testing.T) {
 		fmt.Printf("address(%d): %+v\n", i, addr)
 
 		// Ensure first derived address matches directly requested address
-		if i == 0 && addr.Addr != address.Addr {
-			t.Fatalf("address mismatch at index 0 (expected=%s, found=%s)", address.Addr, addr.Addr)
+		if i == 0 && addr != address {
+			t.Fatalf("address mismatch at index 0 (expected=%s, found=%s)", address, addr)
 		}
 	}
 

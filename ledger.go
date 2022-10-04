@@ -8,7 +8,6 @@ import (
 	"fmt"
 
 	"github.com/ava-labs/avalanchego/ids"
-	"github.com/ava-labs/avalanchego/utils/formatting/address"
 	"github.com/ava-labs/avalanchego/utils/hashing"
 	ledger_go "github.com/zondax/ledger-go"
 )
@@ -98,17 +97,11 @@ func (l *Ledger) Version() (version string, commit string, name string, err erro
 	return
 }
 
-// Address is a succinct representation of an Avalanche Address
-type Address struct {
-	Addr      string
-	ShortAddr ids.ShortID
-}
-
-// Address returns an Avalanche-formatted address with the provided [hrp].
+// Address returns an Avalanche address as ids.ShortID
 //
 // On the P/X-Chain, accounts are derived on the path m/44'/9000'/0'/0/n
 // (where n is the address index).
-func (l *Ledger) Address(hrp string, addressIndex uint32) (*Address, error) {
+func (l *Ledger) Address(addressIndex uint32) (ids.ShortID, error) {
 	msgPK := []byte{
 		CLA,
 		INSPromptPublicKey,
@@ -117,28 +110,16 @@ func (l *Ledger) Address(hrp string, addressIndex uint32) (*Address, error) {
 	}
 	pathBytes, err := bip32bytes(append(pathPrefix, addressIndex), 3)
 	if err != nil {
-		return nil, err
+		return ids.ShortEmpty, err
 	}
-	data := append([]byte(hrp), pathBytes...)
+	data := append([]byte("avax"), pathBytes...)
 	msgPK = append(msgPK, byte(len(data)))
 	msgPK = append(msgPK, data...)
 	rawAddress, err := l.device.Exchange(msgPK)
 	if err != nil {
-		return nil, err
+		return ids.ShortEmpty, err
 	}
-
-	addr, err := address.FormatBech32(hrp, rawAddress)
-	if err != nil {
-		return nil, err
-	}
-	shortAddr, err := ids.ToShortID(rawAddress)
-	if err != nil {
-		return nil, err
-	}
-	return &Address{
-		Addr:      addr,
-		ShortAddr: shortAddr,
-	}, nil
+	return ids.ToShortID(rawAddress)
 }
 
 func (l *Ledger) getExtendedPublicKey() ([]byte, []byte, error) {
@@ -164,19 +145,18 @@ func (l *Ledger) getExtendedPublicKey() ([]byte, []byte, error) {
 	return response[1 : 1+pkLen], response[chainCodeOffset : chainCodeOffset+chainCodeLength], nil
 }
 
-// Addresses returns [addresses] Avalanche-formatted addresses with the
-// provided [hrp].
+// Addresses returns the first [numAddresses] ledger addresses as []ids.ShortID
 //
 // On the P/X-Chain, accounts are derived on the path m/44'/9000'/0'/0/n
 // (where n is the address index).
-func (l *Ledger) Addresses(hrp string, addresses int) ([]*Address, error) {
+func (l *Ledger) Addresses(numAddresses int) ([]ids.ShortID, error) {
 	pk, chainCode, err := l.getExtendedPublicKey()
 	if err != nil {
 		return nil, err
 	}
 
-	addrs := make([]*Address, addresses)
-	for i := 0; i < addresses; i++ {
+	addrs := make([]ids.ShortID, numAddresses)
+	for i := 0; i < numAddresses; i++ {
 		k, err := NewChild(pk, chainCode, uint32(i))
 		if err != nil {
 			return nil, err
@@ -185,14 +165,7 @@ func (l *Ledger) Addresses(hrp string, addresses int) ([]*Address, error) {
 		if err != nil {
 			return nil, err
 		}
-		addr, err := address.FormatBech32(hrp, shortAddr[:])
-		if err != nil {
-			return nil, err
-		}
-		addrs[i] = &Address{
-			Addr:      addr,
-			ShortAddr: shortAddr,
-		}
+		addrs[i] = shortAddr
 	}
 	return addrs, nil
 }
@@ -215,7 +188,6 @@ func (l *Ledger) SignHash(hash []byte, addresses []uint32) ([][]byte, error) {
 	data = append(data, pathBytes...)
 	msgHash = append(msgHash, byte(len(data)))
 	msgHash = append(msgHash, data...)
-	fmt.Printf("signing hash: %X\n", hash)
 	resp, err := l.device.Exchange(msgHash)
 	if err != nil {
 		return nil, err
