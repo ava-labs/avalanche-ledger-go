@@ -24,12 +24,12 @@ const (
 // any change addresses
 var pathPrefix = []uint32{44, 9000, 0, 0}
 
-func (l *Ledger) collectSignatures(addresses []uint32) ([][]byte, error) {
-	results := make([][]byte, len(addresses))
-	for i := 0; i < len(addresses); i++ {
-		suffix := []uint32{addresses[i]}
+func (l *Ledger) collectSignatures(addressIndexes []uint32) ([][]byte, error) {
+	results := make([][]byte, len(addressIndexes))
+	for i := 0; i < len(addressIndexes); i++ {
+		suffix := []uint32{addressIndexes[i]}
 		p1 := 0x01
-		if i == len(addresses)-1 {
+		if i == len(addressIndexes)-1 {
 			p1 = 0x81
 		}
 		data, err := bip32bytes(suffix, 0)
@@ -49,7 +49,6 @@ func (l *Ledger) collectSignatures(addresses []uint32) ([][]byte, error) {
 			return nil, err
 		}
 		results[i] = sig
-		fmt.Printf("%v signed: %X\n", append(pathPrefix, suffix...), results[i])
 	}
 	return results, nil
 }
@@ -97,11 +96,15 @@ func (l *Ledger) Version() (version string, commit string, name string, err erro
 	return
 }
 
-// Address returns an Avalanche address as ids.ShortID
+// Address returns an Avalanche address as ids.ShortID, ledger ask confirmation showing
+// addresss formatted with [displayHrp] (note [displayHrp] length is restricted to 4)
 //
 // On the P/X-Chain, accounts are derived on the path m/44'/9000'/0'/0/n
 // (where n is the address index).
-func (l *Ledger) Address(addressIndex uint32) (ids.ShortID, error) {
+func (l *Ledger) Address(displayHrp string, addressIndex uint32) (ids.ShortID, error) {
+	if len(displayHrp) != 4 {
+		return ids.ShortEmpty, fmt.Errorf("expected displayHrp len of 4, got %d", len(displayHrp))
+	}
 	msgPK := []byte{
 		CLA,
 		INSPromptPublicKey,
@@ -112,7 +115,7 @@ func (l *Ledger) Address(addressIndex uint32) (ids.ShortID, error) {
 	if err != nil {
 		return ids.ShortEmpty, err
 	}
-	data := append([]byte("avax"), pathBytes...)
+	data := append([]byte(displayHrp), pathBytes...)
 	msgPK = append(msgPK, byte(len(data)))
 	msgPK = append(msgPK, data...)
 	rawAddress, err := l.device.Exchange(msgPK)
@@ -171,8 +174,8 @@ func (l *Ledger) Addresses(numAddresses int) ([]ids.ShortID, error) {
 }
 
 // SignHash attempts to sign the [hash] with the provided path [addresses].
-// [addresses] are appened to the [pathPrefix] (m/44'/9000'/0'/0).
-func (l *Ledger) SignHash(hash []byte, addresses []uint32) ([][]byte, error) {
+// [addressIndexes] are appened to the [pathPrefix] (m/44'/9000'/0'/0).
+func (l *Ledger) SignHash(hash []byte, addressIndexes []uint32) ([][]byte, error) {
 	msgHash := []byte{
 		CLA,
 		INSSignHash,
@@ -183,7 +186,7 @@ func (l *Ledger) SignHash(hash []byte, addresses []uint32) ([][]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	data := []byte{byte(len(addresses))}
+	data := []byte{byte(len(addressIndexes))}
 	data = append(data, hash...)
 	data = append(data, pathBytes...)
 	msgHash = append(msgHash, byte(len(data)))
@@ -196,5 +199,5 @@ func (l *Ledger) SignHash(hash []byte, addresses []uint32) ([][]byte, error) {
 		return nil, fmt.Errorf("returned hash %x does not match requested %x", resp, hash)
 	}
 
-	return l.collectSignatures(addresses)
+	return l.collectSignatures(addressIndexes)
 }
