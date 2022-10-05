@@ -56,7 +56,9 @@ func (l *Ledger) collectSignatures(addressIndexes []uint32) ([][]byte, error) {
 // Ledger is a wrapper around the low-level Ledger Device interface that
 // provides Avalanche-specific access.
 type Ledger struct {
-	device ledger_go.LedgerDevice
+	device    ledger_go.LedgerDevice
+	pk        []byte
+	chainCode []byte
 }
 
 // Connect attempts to connect to a Ledger on the device over HID.
@@ -66,7 +68,9 @@ func Connect() (*Ledger, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Ledger{device}, nil
+	return &Ledger{
+		device: device,
+	}, nil
 }
 
 // Disconnect attempts to disconnect from a previously connected Ledger.
@@ -153,14 +157,18 @@ func (l *Ledger) getExtendedPublicKey() ([]byte, []byte, error) {
 // On the P/X-Chain, accounts are derived on the path m/44'/9000'/0'/0/n
 // (where n is the address index).
 func (l *Ledger) Addresses(numAddresses int) ([]ids.ShortID, error) {
-	pk, chainCode, err := l.getExtendedPublicKey()
-	if err != nil {
-		return nil, err
+	if len(l.pk) == 0 {
+		pk, chainCode, err := l.getExtendedPublicKey()
+		if err != nil {
+			return nil, err
+		}
+		l.pk = pk
+		l.chainCode = chainCode
 	}
 
 	addrs := make([]ids.ShortID, numAddresses)
 	for i := 0; i < numAddresses; i++ {
-		k, err := NewChild(pk, chainCode, uint32(i))
+		k, err := NewChild(l.pk, l.chainCode, uint32(i))
 		if err != nil {
 			return nil, err
 		}
