@@ -8,7 +8,6 @@ import (
 	"fmt"
 
 	"github.com/ava-labs/avalanchego/ids"
-	"github.com/ava-labs/avalanchego/utils/formatting/address"
 	"github.com/ava-labs/avalanchego/utils/hashing"
 	ledger_go "github.com/zondax/ledger-go"
 )
@@ -25,12 +24,12 @@ const (
 // any change addresses
 var pathPrefix = []uint32{44, 9000, 0, 0}
 
-func (l *Ledger) collectSignatures(addresses []uint32) ([][]byte, error) {
-	results := make([][]byte, len(addresses))
-	for i := 0; i < len(addresses); i++ {
-		suffix := []uint32{addresses[i]}
+func (l *Ledger) collectSignatures(addressIndexes []uint32) ([][]byte, error) {
+	results := make([][]byte, len(addressIndexes))
+	for i := 0; i < len(addressIndexes); i++ {
+		suffix := []uint32{addressIndexes[i]}
 		p1 := 0x01
-		if i == len(addresses)-1 {
+		if i == len(addressIndexes)-1 {
 			p1 = 0x81
 		}
 		data, err := bip32bytes(suffix, 0)
@@ -50,7 +49,6 @@ func (l *Ledger) collectSignatures(addresses []uint32) ([][]byte, error) {
 			return nil, err
 		}
 		results[i] = sig
-		fmt.Printf("%v signed: %X\n", append(pathPrefix, suffix...), results[i])
 	}
 	return results, nil
 }
@@ -58,7 +56,9 @@ func (l *Ledger) collectSignatures(addresses []uint32) ([][]byte, error) {
 // Ledger is a wrapper around the low-level Ledger Device interface that
 // provides Avalanche-specific access.
 type Ledger struct {
-	device ledger_go.LedgerDevice
+	device    ledger_go.LedgerDevice
+	pk        []byte
+	chainCode []byte
 }
 
 // Connect attempts to connect to a Ledger on the device over HID.
@@ -68,7 +68,9 @@ func Connect() (*Ledger, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Ledger{device}, nil
+	return &Ledger{
+		device: device,
+	}, nil
 }
 
 // Disconnect attempts to disconnect from a previously connected Ledger.
@@ -98,17 +100,15 @@ func (l *Ledger) Version() (version string, commit string, name string, err erro
 	return
 }
 
-// Address is a succinct representation of an Avalanche Address
-type Address struct {
-	Addr      string
-	ShortAddr ids.ShortID
-}
-
-// Address returns an Avalanche-formatted address with the provided [hrp].
+// Address returns an Avalanche address as ids.ShortID, ledger ask confirmation showing
+// addresss formatted with [displayHrp] (note [displayHrp] length is restricted to 4)
 //
 // On the P/X-Chain, accounts are derived on the path m/44'/9000'/0'/0/n
 // (where n is the address index).
-func (l *Ledger) Address(hrp string, addressIndex uint32) (*Address, error) {
+func (l *Ledger) Address(displayHrp string, addressIndex uint32) (ids.ShortID, error) {
+	if len(displayHrp) != 4 {
+		return ids.ShortEmpty, fmt.Errorf("expected displayHrp len of 4, got %d", len(displayHrp))
+	}
 	msgPK := []byte{
 		CLA,
 		INSPromptPublicKey,
@@ -117,28 +117,16 @@ func (l *Ledger) Address(hrp string, addressIndex uint32) (*Address, error) {
 	}
 	pathBytes, err := bip32bytes(append(pathPrefix, addressIndex), 3)
 	if err != nil {
-		return nil, err
+		return ids.ShortEmpty, err
 	}
-	data := append([]byte(hrp), pathBytes...)
+	data := append([]byte(displayHrp), pathBytes...)
 	msgPK = append(msgPK, byte(len(data)))
 	msgPK = append(msgPK, data...)
 	rawAddress, err := l.device.Exchange(msgPK)
 	if err != nil {
-		return nil, err
+		return ids.ShortEmpty, err
 	}
-
-	addr, err := address.FormatBech32(hrp, rawAddress)
-	if err != nil {
-		return nil, err
-	}
-	shortAddr, err := ids.ToShortID(rawAddress)
-	if err != nil {
-		return nil, err
-	}
-	return &Address{
-		Addr:      addr,
-		ShortAddr: shortAddr,
-	}, nil
+	return ids.ToShortID(rawAddress)
 }
 
 func (l *Ledger) getExtendedPublicKey() ([]byte, []byte, error) {
@@ -164,20 +152,23 @@ func (l *Ledger) getExtendedPublicKey() ([]byte, []byte, error) {
 	return response[1 : 1+pkLen], response[chainCodeOffset : chainCodeOffset+chainCodeLength], nil
 }
 
-// Addresses returns [addresses] Avalanche-formatted addresses with the
-// provided [hrp].
+// Addresses returns the first [numAddresses] ledger addresses as []ids.ShortID
 //
 // On the P/X-Chain, accounts are derived on the path m/44'/9000'/0'/0/n
 // (where n is the address index).
-func (l *Ledger) Addresses(hrp string, addresses int) ([]*Address, error) {
-	pk, chainCode, err := l.getExtendedPublicKey()
-	if err != nil {
-		return nil, err
+func (l *Ledger) Addresses(numAddresses int) ([]ids.ShortID, error) {
+	if len(l.pk) == 0 {
+		pk, chainCode, err := l.getExtendedPublicKey()
+		if err != nil {
+			return nil, err
+		}
+		l.pk = pk
+		l.chainCode = chainCode
 	}
 
-	addrs := make([]*Address, addresses)
-	for i := 0; i < addresses; i++ {
-		k, err := NewChild(pk, chainCode, uint32(i))
+	addrs := make([]ids.ShortID, numAddresses)
+	for i := 0; i < numAddresses; i++ {
+		k, err := NewChild(l.pk, l.chainCode, uint32(i))
 		if err != nil {
 			return nil, err
 		}
@@ -185,21 +176,14 @@ func (l *Ledger) Addresses(hrp string, addresses int) ([]*Address, error) {
 		if err != nil {
 			return nil, err
 		}
-		addr, err := address.FormatBech32(hrp, shortAddr[:])
-		if err != nil {
-			return nil, err
-		}
-		addrs[i] = &Address{
-			Addr:      addr,
-			ShortAddr: shortAddr,
-		}
+		addrs[i] = shortAddr
 	}
 	return addrs, nil
 }
 
 // SignHash attempts to sign the [hash] with the provided path [addresses].
-// [addresses] are appened to the [pathPrefix] (m/44'/9000'/0'/0).
-func (l *Ledger) SignHash(hash []byte, addresses []uint32) ([][]byte, error) {
+// [addressIndexes] are appened to the [pathPrefix] (m/44'/9000'/0'/0).
+func (l *Ledger) SignHash(hash []byte, addressIndexes []uint32) ([][]byte, error) {
 	msgHash := []byte{
 		CLA,
 		INSSignHash,
@@ -210,12 +194,11 @@ func (l *Ledger) SignHash(hash []byte, addresses []uint32) ([][]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	data := []byte{byte(len(addresses))}
+	data := []byte{byte(len(addressIndexes))}
 	data = append(data, hash...)
 	data = append(data, pathBytes...)
 	msgHash = append(msgHash, byte(len(data)))
 	msgHash = append(msgHash, data...)
-	fmt.Printf("signing hash: %X\n", hash)
 	resp, err := l.device.Exchange(msgHash)
 	if err != nil {
 		return nil, err
@@ -224,5 +207,5 @@ func (l *Ledger) SignHash(hash []byte, addresses []uint32) ([][]byte, error) {
 		return nil, fmt.Errorf("returned hash %x does not match requested %x", resp, hash)
 	}
 
-	return l.collectSignatures(addresses)
+	return l.collectSignatures(addressIndexes)
 }
