@@ -5,7 +5,7 @@ go 1.18
 require (
 	github.com/FactomProject/btcutilecc v0.0.0-20130527213604-d3a63a5752ec
 	github.com/ava-labs/avalanchego v1.7.18
-	github.com/zondax/ledger-go v0.12.2
+	github.com/zondax/ledger-go v0.12.3-0.20221005223406-dbd460b7296d
 )
 
 require (
