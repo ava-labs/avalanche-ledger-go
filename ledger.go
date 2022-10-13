@@ -80,6 +80,7 @@ func Connect() (*Ledger, error) {
 	admin := ledger_go.NewLedgerAdmin()
 	device, err := admin.Connect(0)
 	if err != nil {
+		err = mapLedgerConnectionErrors(err)
 		return nil, err
 	}
 	return &Ledger{
@@ -104,6 +105,7 @@ func (l *Ledger) Version() (version string, commit string, name string, err erro
 	}
 	rawVersion, err := l.device.Exchange(msgVersion)
 	if err != nil {
+		err = mapLedgerConnectionErrors(err)
 		return
 	}
 
