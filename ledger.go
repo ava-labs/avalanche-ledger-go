@@ -5,7 +5,9 @@ package ledger
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/utils/hashing"
@@ -18,6 +20,14 @@ const (
 	INSPromptPublicKey    = 0x02
 	INSPromptExtPublicKey = 0x03
 	INSSignHash           = 0x04
+)
+
+var (
+	ErrLedgerNotConnected       = errors.New("ledger is not connected")
+	ErrAvalancheAppNotExecuting = errors.New("ledger is not executing avalanche app")
+	ErrLedgerIsBlocked          = errors.New("ledger is blocked")
+	ErrRejectedSignature        = errors.New("hash sign operation rejected by ledger user")
+	ErrRejectedKeyProvide       = errors.New("public key provide operation rejected by ledger user")
 )
 
 // NOTE: The current path prefix assumes we are using account 0 and don't have
@@ -46,6 +56,10 @@ func (l *Ledger) collectSignatures(addressIndexes []uint32) ([][]byte, error) {
 		msgSig = append(msgSig, data...)
 		sig, err := l.device.Exchange(msgSig)
 		if err != nil {
+			err = mapLedgerConnectionErrors(err)
+			if strings.Contains(err.Error(), "[APDU_CODE_CONDITIONS_NOT_SATISFIED] Conditions of use not satisfied") {
+				err = ErrRejectedSignature
+			}
 			return nil, err
 		}
 		results[i] = sig
@@ -66,6 +80,7 @@ func Connect() (*Ledger, error) {
 	admin := ledger_go.NewLedgerAdmin()
 	device, err := admin.Connect(0)
 	if err != nil {
+		err = mapLedgerConnectionErrors(err)
 		return nil, err
 	}
 	return &Ledger{
@@ -90,6 +105,7 @@ func (l *Ledger) Version() (version string, commit string, name string, err erro
 	}
 	rawVersion, err := l.device.Exchange(msgVersion)
 	if err != nil {
+		err = mapLedgerConnectionErrors(err)
 		return
 	}
 
@@ -124,6 +140,10 @@ func (l *Ledger) Address(displayHrp string, addressIndex uint32) (ids.ShortID, e
 	msgPK = append(msgPK, data...)
 	rawAddress, err := l.device.Exchange(msgPK)
 	if err != nil {
+		err = mapLedgerConnectionErrors(err)
+		if strings.Contains(err.Error(), "[APDU_CODE_CONDITIONS_NOT_SATISFIED] Conditions of use not satisfied") {
+			err = ErrRejectedKeyProvide
+		}
 		return ids.ShortEmpty, err
 	}
 	return ids.ToShortID(rawAddress)
@@ -144,6 +164,10 @@ func (l *Ledger) getExtendedPublicKey() ([]byte, []byte, error) {
 	msgEPK = append(msgEPK, pathBytes...)
 	response, err := l.device.Exchange(msgEPK)
 	if err != nil {
+		err = mapLedgerConnectionErrors(err)
+		if strings.Contains(err.Error(), "[APDU_CODE_CONDITIONS_NOT_SATISFIED] Conditions of use not satisfied") {
+			err = ErrRejectedKeyProvide
+		}
 		return nil, nil, err
 	}
 	pkLen := response[0]
@@ -201,6 +225,10 @@ func (l *Ledger) SignHash(hash []byte, addressIndexes []uint32) ([][]byte, error
 	msgHash = append(msgHash, data...)
 	resp, err := l.device.Exchange(msgHash)
 	if err != nil {
+		err = mapLedgerConnectionErrors(err)
+		if strings.Contains(err.Error(), "[APDU_CODE_CONDITIONS_NOT_SATISFIED] Conditions of use not satisfied") {
+			err = ErrRejectedSignature
+		}
 		return nil, err
 	}
 	if !bytes.Equal(resp, hash) {
@@ -208,4 +236,17 @@ func (l *Ledger) SignHash(hash []byte, addressIndexes []uint32) ([][]byte, error
 	}
 
 	return l.collectSignatures(addressIndexes)
+}
+
+func mapLedgerConnectionErrors(err error) error {
+	if strings.Contains(err.Error(), "LedgerHID device") && strings.Contains(err.Error(), "not found") {
+		return ErrLedgerNotConnected
+	}
+	if strings.Contains(err.Error(), "Error code: 6e01") {
+		return ErrAvalancheAppNotExecuting
+	}
+	if strings.Contains(err.Error(), "Error code: 6b0c") {
+		return ErrLedgerIsBlocked
+	}
+	return err
 }
