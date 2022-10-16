@@ -18,11 +18,11 @@ var _ Ledger = &ledger{}
 
 // Ledger interface for the ledger wrapper
 type Ledger interface {
-    Version() (version string, commit string, name string, err error)
-    Address(displayHrp string, addressIndex uint32) (ids.ShortID, error)
-    Addresses(numAddresses int) ([]ids.ShortID, error)
-    SignHash(hash []byte, addressIndexes []uint32) ([][]byte, error)
-    Disconnect() error
+	Version() (version string, commit string, name string, err error)
+	Address(displayHrp string, addressIndex uint32) (ids.ShortID, error)
+	Addresses(numAddresses int) ([]ids.ShortID, error)
+	SignHash(hash []byte, addressIndexes []uint32) ([][]byte, error)
+	Disconnect() error
 }
 
 const (
@@ -54,7 +54,7 @@ type ledger struct {
 }
 
 // New attempts to connect to a Ledger on the device over HID.
-func NewLedger() (Ledger, error) {
+func New() (Ledger, error) {
 	admin := ledger_go.NewLedgerAdmin()
 	device, err := admin.Connect(0)
 	if err != nil {
