@@ -14,6 +14,17 @@ import (
 	ledger_go "github.com/zondax/ledger-go"
 )
 
+var _ Ledger = &ledger{}
+
+// Ledger interface for the ledger wrapper
+type Ledger interface {
+    Version() (version string, commit string, name string, err error)
+    Address(displayHrp string, addressIndex uint32) (ids.ShortID, error)
+    Addresses(numAddresses int) ([]ids.ShortID, error)
+    SignHash(hash []byte, addressIndexes []uint32) ([][]byte, error)
+    Disconnect() error
+}
+
 const (
 	CLA                   = 0x80
 	INSVersion            = 0x00
@@ -34,7 +45,28 @@ var (
 // any change addresses
 var pathPrefix = []uint32{44, 9000, 0, 0}
 
-func (l *Ledger) collectSignatures(addressIndexes []uint32) ([][]byte, error) {
+// ledger is a wrapper around the low-level Ledger Device interface that
+// provides Avalanche-specific access.
+type ledger struct {
+	device    ledger_go.LedgerDevice
+	pk        []byte
+	chainCode []byte
+}
+
+// New attempts to connect to a Ledger on the device over HID.
+func NewLedger() (Ledger, error) {
+	admin := ledger_go.NewLedgerAdmin()
+	device, err := admin.Connect(0)
+	if err != nil {
+		err = mapLedgerConnectionErrors(err)
+		return nil, err
+	}
+	return &ledger{
+		device: device,
+	}, nil
+}
+
+func (l *ledger) collectSignatures(addressIndexes []uint32) ([][]byte, error) {
 	results := make([][]byte, len(addressIndexes))
 	for i := 0; i < len(addressIndexes); i++ {
 		suffix := []uint32{addressIndexes[i]}
@@ -67,35 +99,14 @@ func (l *Ledger) collectSignatures(addressIndexes []uint32) ([][]byte, error) {
 	return results, nil
 }
 
-// Ledger is a wrapper around the low-level Ledger Device interface that
-// provides Avalanche-specific access.
-type Ledger struct {
-	device    ledger_go.LedgerDevice
-	pk        []byte
-	chainCode []byte
-}
-
-// Connect attempts to connect to a Ledger on the device over HID.
-func Connect() (*Ledger, error) {
-	admin := ledger_go.NewLedgerAdmin()
-	device, err := admin.Connect(0)
-	if err != nil {
-		err = mapLedgerConnectionErrors(err)
-		return nil, err
-	}
-	return &Ledger{
-		device: device,
-	}, nil
-}
-
 // Disconnect attempts to disconnect from a previously connected Ledger.
-func (l *Ledger) Disconnect() error {
+func (l *ledger) Disconnect() error {
 	return l.device.Close()
 }
 
 // Version returns information about the Avalanche Ledger app. If a different
 // app is open, this will return an error.
-func (l *Ledger) Version() (version string, commit string, name string, err error) {
+func (l *ledger) Version() (version string, commit string, name string, err error) {
 	msgVersion := []byte{
 		CLA,
 		INSVersion,
@@ -121,7 +132,7 @@ func (l *Ledger) Version() (version string, commit string, name string, err erro
 //
 // On the P/X-Chain, accounts are derived on the path m/44'/9000'/0'/0/n
 // (where n is the address index).
-func (l *Ledger) Address(displayHrp string, addressIndex uint32) (ids.ShortID, error) {
+func (l *ledger) Address(displayHrp string, addressIndex uint32) (ids.ShortID, error) {
 	if len(displayHrp) != 4 {
 		return ids.ShortEmpty, fmt.Errorf("expected displayHrp len of 4, got %d", len(displayHrp))
 	}
@@ -149,7 +160,7 @@ func (l *Ledger) Address(displayHrp string, addressIndex uint32) (ids.ShortID, e
 	return ids.ToShortID(rawAddress)
 }
 
-func (l *Ledger) getExtendedPublicKey() ([]byte, []byte, error) {
+func (l *ledger) getExtendedPublicKey() ([]byte, []byte, error) {
 	msgEPK := []byte{
 		CLA,
 		INSPromptExtPublicKey,
@@ -180,7 +191,7 @@ func (l *Ledger) getExtendedPublicKey() ([]byte, []byte, error) {
 //
 // On the P/X-Chain, accounts are derived on the path m/44'/9000'/0'/0/n
 // (where n is the address index).
-func (l *Ledger) Addresses(numAddresses int) ([]ids.ShortID, error) {
+func (l *ledger) Addresses(numAddresses int) ([]ids.ShortID, error) {
 	if len(l.pk) == 0 {
 		pk, chainCode, err := l.getExtendedPublicKey()
 		if err != nil {
@@ -207,7 +218,7 @@ func (l *Ledger) Addresses(numAddresses int) ([]ids.ShortID, error) {
 
 // SignHash attempts to sign the [hash] with the provided path [addresses].
 // [addressIndexes] are appened to the [pathPrefix] (m/44'/9000'/0'/0).
-func (l *Ledger) SignHash(hash []byte, addressIndexes []uint32) ([][]byte, error) {
+func (l *ledger) SignHash(hash []byte, addressIndexes []uint32) ([][]byte, error) {
 	msgHash := []byte{
 		CLA,
 		INSSignHash,

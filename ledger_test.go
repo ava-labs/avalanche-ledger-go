@@ -14,7 +14,7 @@ import (
 //
 // TODO: mock + test specific correctness rather than just FATAL
 func TestLedger(t *testing.T) {
-	device, err := Connect()
+	device, err := NewLedger()
 	if err != nil {
 		t.Fatal(err)
 	}
