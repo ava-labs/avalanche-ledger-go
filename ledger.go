@@ -65,12 +65,12 @@ func New() (Ledger, error) {
 	}, nil
 }
 
-func (l *ledger) collectSignatures(addressIndexes []uint32) ([][]byte, error) {
-	results := make([][]byte, len(addressIndexes))
-	for i := 0; i < len(addressIndexes); i++ {
-		suffix := []uint32{addressIndexes[i]}
+func (l *ledger) collectSignatures(addressIndices []uint32) ([][]byte, error) {
+	results := make([][]byte, len(addressIndices))
+	for i := 0; i < len(addressIndices); i++ {
+		suffix := []uint32{addressIndices[i]}
 		p1 := 0x01
-		if i == len(addressIndexes)-1 {
+		if i == len(addressIndices)-1 {
 			p1 = 0x81
 		}
 		data, err := bip32bytes(suffix, 0)
@@ -127,13 +127,13 @@ func (l *ledger) Version() (version string, commit string, name string, err erro
 }
 
 // Address returns an Avalanche address as ids.ShortID, ledger ask confirmation showing
-// addresss formatted with [displayHrp] (note [displayHrp] length is restricted to 4)
+// addresss formatted with [displayHRP] (note [displayHRP] length is restricted to 4)
 //
 // On the P/X-Chain, accounts are derived on the path m/44'/9000'/0'/0/n
 // (where n is the address index).
-func (l *ledger) Address(displayHrp string, addressIndex uint32) (ids.ShortID, error) {
-	if len(displayHrp) != 4 {
-		return ids.ShortEmpty, fmt.Errorf("expected displayHrp len of 4, got %d", len(displayHrp))
+func (l *ledger) Address(displayHRP string, addressIndex uint32) (ids.ShortID, error) {
+	if len(displayHRP) != 4 {
+		return ids.ShortEmpty, fmt.Errorf("expected displayHRP len of 4, got %d", len(displayHRP))
 	}
 	msgPK := []byte{
 		CLA,
@@ -145,7 +145,7 @@ func (l *ledger) Address(displayHrp string, addressIndex uint32) (ids.ShortID, e
 	if err != nil {
 		return ids.ShortEmpty, err
 	}
-	data := append([]byte(displayHrp), pathBytes...)
+	data := append([]byte(displayHRP), pathBytes...)
 	msgPK = append(msgPK, byte(len(data)))
 	msgPK = append(msgPK, data...)
 	rawAddress, err := l.device.Exchange(msgPK)
@@ -216,8 +216,8 @@ func (l *ledger) Addresses(numAddresses int) ([]ids.ShortID, error) {
 }
 
 // SignHash attempts to sign the [hash] with the provided path [addresses].
-// [addressIndexes] are appened to the [pathPrefix] (m/44'/9000'/0'/0).
-func (l *ledger) SignHash(hash []byte, addressIndexes []uint32) ([][]byte, error) {
+// [addressIndices] are appened to the [pathPrefix] (m/44'/9000'/0'/0).
+func (l *ledger) SignHash(hash []byte, addressIndices []uint32) ([][]byte, error) {
 	msgHash := []byte{
 		CLA,
 		INSSignHash,
@@ -228,7 +228,7 @@ func (l *ledger) SignHash(hash []byte, addressIndexes []uint32) ([][]byte, error
 	if err != nil {
 		return nil, err
 	}
-	data := []byte{byte(len(addressIndexes))}
+	data := []byte{byte(len(addressIndices))}
 	data = append(data, hash...)
 	data = append(data, pathBytes...)
 	msgHash = append(msgHash, byte(len(data)))
@@ -245,7 +245,7 @@ func (l *ledger) SignHash(hash []byte, addressIndexes []uint32) ([][]byte, error
 		return nil, fmt.Errorf("returned hash %x does not match requested %x", resp, hash)
 	}
 
-	return l.collectSignatures(addressIndexes)
+	return l.collectSignatures(addressIndices)
 }
 
 func mapLedgerConnectionErrors(err error) error {
