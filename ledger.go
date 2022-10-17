@@ -21,7 +21,7 @@ type Ledger interface {
 	Version() (version string, commit string, name string, err error)
 	Address(displayHRP string, addressIndex uint32) (ids.ShortID, error)
 	Addresses(numAddresses int) ([]ids.ShortID, error)
-	SignHash(hash []byte, addressIndexes []uint32) ([][]byte, error)
+	SignHash(hash []byte, addressIndices []uint32) ([][]byte, error)
 	Disconnect() error
 }
 
