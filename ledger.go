@@ -56,6 +56,7 @@ type ledger struct {
 // New attempts to connect to a Ledger on the device over HID.
 func New() (Ledger, error) {
 	admin := ledger_go.NewLedgerAdmin()
+	// connect to the first (0-index) HID USB device that satisfies the ledger-go library criteria
 	device, err := admin.Connect(0)
 	if err != nil {
 		return nil, mapLedgerConnectionErrors(err)
