@@ -58,8 +58,7 @@ func New() (Ledger, error) {
 	admin := ledger_go.NewLedgerAdmin()
 	device, err := admin.Connect(0)
 	if err != nil {
-		err = mapLedgerConnectionErrors(err)
-		return nil, err
+		return nil, mapLedgerConnectionErrors(err)
 	}
 	return &ledger{
 		device: device,
