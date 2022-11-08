@@ -20,7 +20,7 @@ var _ Ledger = &ledger{}
 type Ledger interface {
 	Version() (version string, commit string, name string, err error)
 	Address(displayHRP string, addressIndex uint32) (ids.ShortID, error)
-	Addresses([]uint32) ([]ids.ShortID, error)
+	Addresses(addressIndices []uint32) ([]ids.ShortID, error)
 	SignHash(hash []byte, addressIndices []uint32) ([][]byte, error)
 	Disconnect() error
 }
