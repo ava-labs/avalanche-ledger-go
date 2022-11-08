@@ -187,7 +187,7 @@ func (l *ledger) getExtendedPublicKey() ([]byte, []byte, error) {
 	return response[1 : 1+pkLen], response[chainCodeOffset : chainCodeOffset+chainCodeLength], nil
 }
 
-// Addresses returns the ledger addresses as []ids.ShortID, associated to the given [addressIndices]
+// Addresses returns the ledger addresses associated to the given [addressIndices], as []ids.ShortID
 //
 // On the P/X-Chain, accounts are derived on the path m/44'/9000'/0'/0/n
 // (where n is the address index).
