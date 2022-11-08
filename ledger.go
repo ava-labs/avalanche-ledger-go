@@ -20,7 +20,7 @@ var _ Ledger = &ledger{}
 type Ledger interface {
 	Version() (version string, commit string, name string, err error)
 	Address(displayHRP string, addressIndex uint32) (ids.ShortID, error)
-	Addresses(numAddresses int) ([]ids.ShortID, error)
+	Addresses([]uint32) ([]ids.ShortID, error)
 	SignHash(hash []byte, addressIndices []uint32) ([][]byte, error)
 	Disconnect() error
 }
@@ -187,11 +187,11 @@ func (l *ledger) getExtendedPublicKey() ([]byte, []byte, error) {
 	return response[1 : 1+pkLen], response[chainCodeOffset : chainCodeOffset+chainCodeLength], nil
 }
 
-// Addresses returns the first [numAddresses] ledger addresses as []ids.ShortID
+// Addresses returns the ledger addresses as []ids.ShortID, associated to the given [addressIndices]
 //
 // On the P/X-Chain, accounts are derived on the path m/44'/9000'/0'/0/n
 // (where n is the address index).
-func (l *ledger) Addresses(numAddresses int) ([]ids.ShortID, error) {
+func (l *ledger) Addresses(addressIndices []uint32) ([]ids.ShortID, error) {
 	if len(l.pk) == 0 {
 		pk, chainCode, err := l.getExtendedPublicKey()
 		if err != nil {
@@ -201,9 +201,9 @@ func (l *ledger) Addresses(numAddresses int) ([]ids.ShortID, error) {
 		l.chainCode = chainCode
 	}
 
-	addrs := make([]ids.ShortID, numAddresses)
-	for i := 0; i < numAddresses; i++ {
-		k, err := NewChild(l.pk, l.chainCode, uint32(i))
+	addrs := make([]ids.ShortID, len(addressIndices))
+	for i, addrIndex := range addressIndices {
+		k, err := NewChild(l.pk, l.chainCode, addrIndex)
 		if err != nil {
 			return nil, err
 		}
