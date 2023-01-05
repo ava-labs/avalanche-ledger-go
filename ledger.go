@@ -4,14 +4,12 @@
 package ledger
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/utils/hashing"
-	ledger_go "github.com/zondax/ledger-go"
+	ledger_app "github.com/zondax/ledger-avalanche-go"
 )
 
 var _ Ledger = &ledger{}
@@ -48,83 +46,50 @@ var pathPrefix = []uint32{44, 9000, 0, 0}
 // ledger is a wrapper around the low-level Ledger Device interface that
 // provides Avalanche-specific access.
 type ledger struct {
-	device    ledger_go.LedgerDevice
-	pk        []byte
+	app       *ledger_app.LedgerAvalanche
+	pubkey    []byte
 	chainCode []byte
+	hrp       string
+	chainID   string
 }
 
 // New attempts to connect to a Ledger on the device over HID.
 func New() (Ledger, error) {
-	admin := ledger_go.NewLedgerAdmin()
-	// connect to the first (0-index) HID USB device that satisfies the ledger-go library criteria
-	device, err := admin.Connect(0)
+	app, err := ledger_app.FindLedgerAvalancheApp()
 	if err != nil {
-		return nil, mapLedgerConnectionErrors(err)
+		return nil, err
 	}
 	return &ledger{
-		device: device,
+		app: app,
 	}, nil
 }
 
-func (l *ledger) collectSignatures(addressIndices []uint32) ([][]byte, error) {
-	results := make([][]byte, len(addressIndices))
-	for i := 0; i < len(addressIndices); i++ {
-		suffix := []uint32{addressIndices[i]}
-		p1 := 0x01
-		if i == len(addressIndices)-1 {
-			p1 = 0x81
-		}
-		data, err := bip32bytes(suffix, 0)
-		if err != nil {
-			return nil, err
-		}
-		msgSig := []byte{
-			CLA,
-			INSSignHash,
-			byte(p1),
-			0x0,
-		}
-		msgSig = append(msgSig, byte(len(data)))
-		msgSig = append(msgSig, data...)
-		sig, err := l.device.Exchange(msgSig)
-		if err != nil {
-			err = mapLedgerConnectionErrors(err)
-			if strings.Contains(err.Error(), "[APDU_CODE_CONDITIONS_NOT_SATISFIED] Conditions of use not satisfied") {
-				err = ErrRejectedSignature
-			}
-			return nil, err
-		}
-		results[i] = sig
+// TODO
+func NewWithChainDetails(hrp string, chainID string) (Ledger, error) {
+	app, err := ledger_app.FindLedgerAvalancheApp()
+	if err != nil {
+		return nil, err
 	}
-	return results, nil
+	return &ledger{
+		app:     app,
+		hrp:     hrp,
+		chainID: chainID,
+	}, nil
 }
 
 // Disconnect attempts to disconnect from a previously connected Ledger.
 func (l *ledger) Disconnect() error {
-	return l.device.Close()
+	return l.app.Close()
 }
 
 // Version returns information about the Avalanche Ledger app. If a different
 // app is open, this will return an error.
 func (l *ledger) Version() (version string, commit string, name string, err error) {
-	msgVersion := []byte{
-		CLA,
-		INSVersion,
-		0x0,
-		0x0,
-		0x0,
-	}
-	rawVersion, err := l.device.Exchange(msgVersion)
+	info, err := l.app.GetVersion()
 	if err != nil {
-		err = mapLedgerConnectionErrors(err)
-		return
+		return "", "", "", err
 	}
-
-	version = fmt.Sprintf("%d.%d.%d", rawVersion[0], rawVersion[1], rawVersion[2])
-	rem := bytes.Split(rawVersion[3:], []byte{0x0})
-	commit = fmt.Sprintf("%x", rem[0])
-	name = string(rem[1])
-	return
+	return info.String(), "", "Avalanche", nil
 }
 
 // Address returns an Avalanche address as ids.ShortID, ledger ask confirmation showing
@@ -133,58 +98,20 @@ func (l *ledger) Version() (version string, commit string, name string, err erro
 // On the P/X-Chain, accounts are derived on the path m/44'/9000'/0'/0/n
 // (where n is the address index).
 func (l *ledger) Address(displayHRP string, addressIndex uint32) (ids.ShortID, error) {
-	if len(displayHRP) != 4 {
-		return ids.ShortEmpty, fmt.Errorf("expected displayHRP len of 4, got %d", len(displayHRP))
+	if len(l.pubkey) == 0 {
+		showOnScreen := true
+		path := fmt.Sprintf("%s0/%d", getRootPath(), addressIndex)
+		pk, _, err := l.app.GetPubKey(path, showOnScreen, l.hrp, l.chainID)
+		if err != nil {
+			return ids.ShortEmpty, err
+		}
+		l.pubkey = pk
 	}
-	msgPK := []byte{
-		CLA,
-		INSPromptPublicKey,
-		0x4,
-		0x0,
-	}
-	pathBytes, err := bip32bytes(append(pathPrefix, addressIndex), 3)
+	k, err := NewChild(l.pubkey, l.chainCode, addressIndex)
 	if err != nil {
 		return ids.ShortEmpty, err
 	}
-	data := append([]byte(displayHRP), pathBytes...)
-	msgPK = append(msgPK, byte(len(data)))
-	msgPK = append(msgPK, data...)
-	rawAddress, err := l.device.Exchange(msgPK)
-	if err != nil {
-		err = mapLedgerConnectionErrors(err)
-		if strings.Contains(err.Error(), "[APDU_CODE_CONDITIONS_NOT_SATISFIED] Conditions of use not satisfied") {
-			err = ErrRejectedKeyProvide
-		}
-		return ids.ShortEmpty, err
-	}
-	return ids.ToShortID(rawAddress)
-}
-
-func (l *ledger) getExtendedPublicKey() ([]byte, []byte, error) {
-	msgEPK := []byte{
-		CLA,
-		INSPromptExtPublicKey,
-		0x0,
-		0x0,
-	}
-	pathBytes, err := bip32bytes(pathPrefix, 3)
-	if err != nil {
-		return nil, nil, err
-	}
-	msgEPK = append(msgEPK, byte(len(pathBytes)))
-	msgEPK = append(msgEPK, pathBytes...)
-	response, err := l.device.Exchange(msgEPK)
-	if err != nil {
-		err = mapLedgerConnectionErrors(err)
-		if strings.Contains(err.Error(), "[APDU_CODE_CONDITIONS_NOT_SATISFIED] Conditions of use not satisfied") {
-			err = ErrRejectedKeyProvide
-		}
-		return nil, nil, err
-	}
-	pkLen := response[0]
-	chainCodeOffset := 2 + pkLen
-	chainCodeLength := response[1+pkLen]
-	return response[1 : 1+pkLen], response[chainCodeOffset : chainCodeOffset+chainCodeLength], nil
+	return ids.ToShortID(hashing.PubkeyBytesToAddress(k))
 }
 
 // Addresses returns the ledger addresses associated to the given [addressIndices], as []ids.ShortID
@@ -192,18 +119,19 @@ func (l *ledger) getExtendedPublicKey() ([]byte, []byte, error) {
 // On the P/X-Chain, accounts are derived on the path m/44'/9000'/0'/0/n
 // (where n is the address index).
 func (l *ledger) Addresses(addressIndices []uint32) ([]ids.ShortID, error) {
-	if len(l.pk) == 0 {
-		pk, chainCode, err := l.getExtendedPublicKey()
+	if len(l.pubkey) == 0 {
+		showOnScreen := true
+		path := getRootPath() + "/0"
+		pk, _, err := l.app.GetPubKey(path, showOnScreen, l.hrp, l.chainID)
 		if err != nil {
 			return nil, err
 		}
-		l.pk = pk
-		l.chainCode = chainCode
+		l.pubkey = pk
 	}
 
 	addrs := make([]ids.ShortID, len(addressIndices))
 	for i, addrIndex := range addressIndices {
-		k, err := NewChild(l.pk, l.chainCode, addrIndex)
+		k, err := NewChild(l.pubkey, l.chainCode, addrIndex)
 		if err != nil {
 			return nil, err
 		}
@@ -219,45 +147,34 @@ func (l *ledger) Addresses(addressIndices []uint32) ([]ids.ShortID, error) {
 // SignHash attempts to sign the [hash] with the provided path [addresses].
 // [addressIndices] are appened to the [pathPrefix] (m/44'/9000'/0'/0).
 func (l *ledger) SignHash(hash []byte, addressIndices []uint32) ([][]byte, error) {
-	msgHash := []byte{
-		CLA,
-		INSSignHash,
-		0x0,
-		0x0,
-	}
-	pathBytes, err := bip32bytes(pathPrefix, 3)
+	signingPaths := getSigningPathsFromIndices(addressIndices)
+	rootPath := getRootPath()
+	respSign, err := l.app.SignHash(rootPath, signingPaths, hash)
 	if err != nil {
 		return nil, err
-	}
-	data := []byte{byte(len(addressIndices))}
-	data = append(data, hash...)
-	data = append(data, pathBytes...)
-	msgHash = append(msgHash, byte(len(data)))
-	msgHash = append(msgHash, data...)
-	resp, err := l.device.Exchange(msgHash)
-	if err != nil {
-		err = mapLedgerConnectionErrors(err)
-		if strings.Contains(err.Error(), "[APDU_CODE_CONDITIONS_NOT_SATISFIED] Conditions of use not satisfied") {
-			err = ErrRejectedSignature
-		}
-		return nil, err
-	}
-	if !bytes.Equal(resp, hash) {
-		return nil, fmt.Errorf("returned hash %x does not match requested %x", resp, hash)
 	}
 
-	return l.collectSignatures(addressIndices)
+	if err := l.app.VerifyMultipleSignatures(*respSign, hash, rootPath, signingPaths, l.hrp, l.chainID); err != nil {
+		return nil, err
+	}
+
+	sigs := make([][]byte, len(addressIndices))
+	i := 0
+	for _, sig := range respSign.Signature {
+		sigs[i] = sig
+		i++
+	}
+	return sigs, nil
 }
 
-func mapLedgerConnectionErrors(err error) error {
-	if strings.Contains(err.Error(), "LedgerHID device") && strings.Contains(err.Error(), "not found") {
-		return ErrLedgerNotConnected
+func getRootPath() string {
+	return fmt.Sprintf("m/%d'/%d'/%d'/", pathPrefix[0], pathPrefix[1], pathPrefix[2])
+}
+
+func getSigningPathsFromIndices(indices []uint32) []string {
+	signingPaths := make([]string, len(indices))
+	for i, idx := range indices {
+		signingPaths[i] = fmt.Sprintf("0/%d", idx)
 	}
-	if strings.Contains(err.Error(), "Error code: 6e01") {
-		return ErrAvalancheAppNotExecuting
-	}
-	if strings.Contains(err.Error(), "Error code: 6b0c") {
-		return ErrLedgerIsBlocked
-	}
-	return err
+	return signingPaths
 }
